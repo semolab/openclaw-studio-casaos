@@ -27,9 +27,9 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 
 ## Main modules / bounded contexts
 - **Canvas UI** (`src/features/canvas`): React Flow canvas, tiles, editor UI, local in-memory state + actions.
-- **Projects** (`src/lib/projects`, `src/app/api/projects`): project/tile models, store persistence, workspace files, heartbeat settings, shared project/tile resolution (`src/lib/projects/resolve.ts`), server-side filesystem helpers (`src/lib/projects/fs.server.ts`) for path resolution and agent cleanup.
+- **Projects** (`src/lib/projects`, `src/app/api/projects`): project/tile models, store persistence, workspace files, heartbeat settings, shared project/tile resolution (`src/lib/projects/resolve.ts`), server-side filesystem helpers (`src/lib/projects/fs.server.ts`) for agent cleanup.
 - **Gateway** (`src/lib/gateway`): WebSocket client for agent runtime (frames, connect, request/response).
-- **Clawdbot config** (`src/lib/clawdbot`): read/write moltbot.json, agent list and heartbeat defaults.
+- **Clawdbot config + paths** (`src/lib/clawdbot`): read/write moltbot.json, agent list and heartbeat defaults, consolidated state/config/.env path resolution (`src/lib/clawdbot/paths.ts`).
 - **Discord integration** (`src/lib/discord`, API route): channel provisioning and config binding.
 - **Shared utilities** (`src/lib/*`): env, ids, names, avatars, text parsing, logging, filesystem helpers.
 
@@ -76,16 +76,16 @@ Flow:
 
 ### 4) Discord provisioning
 - API route calls `createDiscordChannelForAgent`.
-- Uses DISCORD_BOT_TOKEN from `~/.clawdbot/.env`.
+- Uses DISCORD_BOT_TOKEN from the resolved state-dir `.env` file.
 - Updates `moltbot.json` bindings and channel config.
 
 ## Cross-cutting concerns
-- **Configuration**: `src/lib/env` validates env via zod; `lib/clawdbot` resolves config path and state dirs.
+- **Configuration**: `src/lib/env` validates env via zod; `lib/clawdbot/paths.ts` resolves config path and state dirs.
 - **Logging**: `src/lib/logger` (console wrappers) used in API routes and gateway client.
 - **Error handling**:
   - API routes return JSON `{ error }` with appropriate status.
   - `fetchJson` throws when `!res.ok`, surfaces errors to UI state.
-- **Filesystem helpers**: `src/lib/projects/fs.server.ts` centralizes home-path expansion and agent workspace/state cleanup for API routes.
+- **Filesystem helpers**: `src/lib/projects/fs.server.ts` handles agent workspace/state cleanup for API routes; state/config path expansion lives in `src/lib/clawdbot/paths.ts`.
 - **Tracing**: `src/instrumentation.ts` registers `@vercel/otel` for telemetry.
 - **Validation**: request payload validation in API routes; shared project/tile resolution in `src/lib/projects/resolve.ts`; typed payloads in `lib/projects/types`.
 
