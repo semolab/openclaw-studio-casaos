@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { Project, ProjectsStore } from "@/lib/projects/types";
+import type { Project, ProjectTile, ProjectsStore } from "@/lib/projects/types";
 import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
 
 const STORE_VERSION: ProjectsStore["version"] = 2;
@@ -34,6 +34,89 @@ export const normalizeProjectsStore = (store: ProjectsStore): ProjectsStore => {
     activeProjectId,
     projects,
   };
+};
+
+export const appendProjectToStore = (
+  store: ProjectsStore,
+  project: Project
+): ProjectsStore =>
+  normalizeProjectsStore({
+    version: STORE_VERSION,
+    activeProjectId: project.id,
+    projects: [...store.projects, project],
+  });
+
+export const removeProjectFromStore = (
+  store: ProjectsStore,
+  projectId: string
+): { store: ProjectsStore; removed: boolean } => {
+  const projects = store.projects.filter((project) => project.id !== projectId);
+  const removed = projects.length !== store.projects.length;
+  return {
+    store: normalizeProjectsStore({
+      version: STORE_VERSION,
+      activeProjectId: store.activeProjectId,
+      projects,
+    }),
+    removed,
+  };
+};
+
+export const addTileToProject = (
+  store: ProjectsStore,
+  projectId: string,
+  tile: ProjectTile,
+  now: number = Date.now()
+): ProjectsStore => ({
+  ...store,
+  version: STORE_VERSION,
+  projects: store.projects.map((project) =>
+    project.id === projectId
+      ? { ...project, tiles: [...project.tiles, tile], updatedAt: now }
+      : project
+  ),
+});
+
+export const updateTileInProject = (
+  store: ProjectsStore,
+  projectId: string,
+  tileId: string,
+  patch: Partial<ProjectTile>,
+  now: number = Date.now()
+): ProjectsStore => ({
+  ...store,
+  version: STORE_VERSION,
+  projects: store.projects.map((project) =>
+    project.id === projectId
+      ? {
+          ...project,
+          tiles: project.tiles.map((tile) =>
+            tile.id === tileId ? { ...tile, ...patch } : tile
+          ),
+          updatedAt: now,
+        }
+      : project
+  ),
+});
+
+export const removeTileFromProject = (
+  store: ProjectsStore,
+  projectId: string,
+  tileId: string,
+  now: number = Date.now()
+): { store: ProjectsStore; removed: boolean } => {
+  let removed = false;
+  const nextStore = {
+    ...store,
+    version: STORE_VERSION,
+    projects: store.projects.map((project) => {
+      if (project.id !== projectId) return project;
+      const nextTiles = project.tiles.filter((tile) => tile.id !== tileId);
+      removed = removed || nextTiles.length !== project.tiles.length;
+      return { ...project, tiles: nextTiles, updatedAt: now };
+    }),
+  };
+  return { store: nextStore, removed };
 };
 
 const parseAgentId = (sessionKey: string): string => {
