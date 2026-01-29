@@ -1,11 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 
 import type { Project, ProjectsStore } from "@/lib/projects/types";
+import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
 
 const STORE_VERSION: ProjectsStore["version"] = 2;
-const STORE_DIR = path.join(os.homedir(), ".clawdbot", "agent-canvas");
+const STORE_DIR = resolveAgentCanvasDir();
 const STORE_PATH = path.join(STORE_DIR, "projects.json");
 
 export type ProjectsStorePayload = ProjectsStore;
