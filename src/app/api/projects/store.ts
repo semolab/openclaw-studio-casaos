@@ -22,6 +22,20 @@ export const defaultStore = (): ProjectsStore => ({
   projects: [],
 });
 
+export const normalizeProjectsStore = (store: ProjectsStore): ProjectsStore => {
+  const projects = Array.isArray(store.projects) ? store.projects : [];
+  const activeProjectId =
+    typeof store.activeProjectId === "string" &&
+    projects.some((project) => project.id === store.activeProjectId)
+      ? store.activeProjectId
+      : projects[0]?.id ?? null;
+  return {
+    version: STORE_VERSION,
+    activeProjectId,
+    projects,
+  };
+};
+
 const parseAgentId = (sessionKey: string): string => {
   const match = sessionKey.match(/^agent:([^:]+):/);
   return match ? match[1] : "main";
