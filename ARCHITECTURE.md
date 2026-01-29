@@ -27,7 +27,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 
 ## Main modules / bounded contexts
 - **Canvas UI** (`src/features/canvas`): React Flow canvas, tiles, editor UI, local in-memory state + actions.
-- **Projects** (`src/lib/projects`, `src/app/api/projects`): project/tile models, store persistence, workspace files, heartbeat settings, server-side filesystem helpers (`src/lib/projects/fs.server.ts`) for path resolution and agent cleanup.
+- **Projects** (`src/lib/projects`, `src/app/api/projects`): project/tile models, store persistence, workspace files, heartbeat settings, shared project/tile resolution (`src/lib/projects/resolve.ts`), server-side filesystem helpers (`src/lib/projects/fs.server.ts`) for path resolution and agent cleanup.
 - **Gateway** (`src/lib/gateway`): WebSocket client for agent runtime (frames, connect, request/response).
 - **Clawdbot config** (`src/lib/clawdbot`): read/write moltbot.json, agent list and heartbeat defaults.
 - **Discord integration** (`src/lib/discord`, API route): channel provisioning and config binding.
@@ -87,7 +87,7 @@ Flow:
   - `fetchJson` throws when `!res.ok`, surfaces errors to UI state.
 - **Filesystem helpers**: `src/lib/projects/fs.server.ts` centralizes home-path expansion and agent workspace/state cleanup for API routes.
 - **Tracing**: `src/instrumentation.ts` registers `@vercel/otel` for telemetry.
-- **Validation**: request payload validation in API routes; typed payloads in `lib/projects/types`.
+- **Validation**: request payload validation in API routes; shared project/tile resolution in `src/lib/projects/resolve.ts`; typed payloads in `lib/projects/types`.
 
 ## Major design decisions & trade-offs
 - **Local JSON store over DB**: faster iteration, local-first; trade-off is no concurrency or multi-user support.
