@@ -4,13 +4,13 @@ import { logger } from "@/lib/logger";
 import type { ProjectTileUpdatePayload } from "@/lib/projects/types";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { collectAgentIdsAndDeleteArtifacts } from "@/lib/projects/fs.server";
-import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
+import { resolveProjectTileFromParams } from "@/app/api/projects/resolveResponse";
 import {
   removeAgentEntry,
   updateClawdbotConfig,
   upsertAgentEntry,
 } from "@/lib/clawdbot/config";
-import { loadStore, removeTileFromProject, saveStore, updateTileInProject } from "../../../store";
+import { removeTileFromProject, saveStore, updateTileInProject } from "../../../store";
 
 export const runtime = "nodejs";
 
@@ -19,13 +19,11 @@ export async function DELETE(
   context: { params: Promise<{ projectId: string; tileId: string }> }
 ) {
   try {
-    const { projectId, tileId } = await context.params;
-    const store = loadStore();
-    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
+    const resolved = await resolveProjectTileFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }
-    const { projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
+    const { store, projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
 
     const warnings: string[] = [];
     const agentIds = collectAgentIdsAndDeleteArtifacts(
@@ -62,7 +60,6 @@ export async function PATCH(
   context: { params: Promise<{ projectId: string; tileId: string }> }
 ) {
   try {
-    const { projectId, tileId } = await context.params;
     const body = (await request.json()) as ProjectTileUpdatePayload;
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const avatarSeed =
@@ -77,12 +74,11 @@ export async function PATCH(
       return NextResponse.json({ error: "Avatar seed is invalid." }, { status: 400 });
     }
 
-    const store = loadStore();
-    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
+    const resolved = await resolveProjectTileFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }
-    const { projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
+    const { store, projectId: resolvedProjectId, tileId: resolvedTileId, tile } = resolved;
 
     const warnings: string[] = [];
     if (name) {

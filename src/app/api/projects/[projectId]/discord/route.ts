@@ -3,8 +3,7 @@ import { NextResponse } from "next/server";
 import { logger } from "@/lib/logger";
 import { createDiscordChannelForAgent } from "@/lib/discord/discordChannel";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
-import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
-import { loadStore } from "../../store";
+import { resolveProjectFromParams } from "@/app/api/projects/resolveResponse";
 
 export const runtime = "nodejs";
 
@@ -19,7 +18,6 @@ export async function POST(
   context: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = await context.params;
     const body = (await request.json()) as DiscordChannelRequest;
     const guildId = typeof body?.guildId === "string" ? body.guildId.trim() : undefined;
     const agentId = typeof body?.agentId === "string" ? body.agentId.trim() : "";
@@ -31,8 +29,7 @@ export async function POST(
       );
     }
 
-    const store = loadStore();
-    const resolved = resolveProjectOrResponse(store, projectId);
+    const resolved = await resolveProjectFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }

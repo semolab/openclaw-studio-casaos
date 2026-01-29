@@ -6,8 +6,8 @@ import {
   updateClawdbotConfig,
 } from "@/lib/clawdbot/config";
 import { collectAgentIdsAndDeleteArtifacts } from "@/lib/projects/fs.server";
-import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
-import { loadStore, removeProjectFromStore, saveStore } from "../store";
+import { resolveProjectFromParams } from "@/app/api/projects/resolveResponse";
+import { removeProjectFromStore, saveStore } from "../store";
 
 export const runtime = "nodejs";
 
@@ -16,13 +16,11 @@ export async function DELETE(
   context: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = await context.params;
-    const store = loadStore();
-    const resolved = resolveProjectOrResponse(store, projectId);
+    const resolved = await resolveProjectFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }
-    const { projectId: resolvedProjectId, project } = resolved;
+    const { store, projectId: resolvedProjectId, project } = resolved;
 
     const warnings: string[] = [];
     const agentIds = collectAgentIdsAndDeleteArtifacts(

@@ -9,9 +9,8 @@ import {
   readWorkspaceFiles,
   writeWorkspaceFiles,
 } from "@/lib/projects/workspaceFiles.server";
-import { resolveProjectTileOrResponse } from "@/app/api/projects/resolveResponse";
+import { resolveProjectTileFromParams } from "@/app/api/projects/resolveResponse";
 import type { ProjectTileWorkspaceFilesUpdatePayload } from "@/lib/projects/types";
-import { loadStore } from "../../../../store";
 
 export const runtime = "nodejs";
 
@@ -20,9 +19,7 @@ export async function GET(
   context: { params: Promise<{ projectId: string; tileId: string }> }
 ) {
   try {
-    const { projectId, tileId } = await context.params;
-    const store = loadStore();
-    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
+    const resolved = await resolveProjectTileFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }
@@ -45,9 +42,7 @@ export async function PUT(
   context: { params: Promise<{ projectId: string; tileId: string }> }
 ) {
   try {
-    const { projectId, tileId } = await context.params;
-    const store = loadStore();
-    const resolved = resolveProjectTileOrResponse(store, projectId, tileId);
+    const resolved = await resolveProjectTileFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }

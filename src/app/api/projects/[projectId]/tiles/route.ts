@@ -13,14 +13,14 @@ import type {
 } from "@/lib/projects/types";
 import { resolveAgentWorkspaceDir } from "@/lib/projects/agentWorkspace";
 import { resolveStateDir } from "@/lib/clawdbot/paths";
-import { resolveProjectOrResponse } from "@/app/api/projects/resolveResponse";
+import { resolveProjectFromParams } from "@/app/api/projects/resolveResponse";
 import {
   updateClawdbotConfig,
   upsertAgentEntry,
 } from "@/lib/clawdbot/config";
 import { generateAgentId } from "@/lib/ids/agentId";
 import { provisionWorkspaceFiles } from "@/lib/projects/workspaceFiles.server";
-import { addTileToProject, loadStore, saveStore } from "../../store";
+import { addTileToProject, saveStore } from "../../store";
 import { buildSessionKey } from "@/lib/projects/sessionKey";
 
 export const runtime = "nodejs";
@@ -51,8 +51,6 @@ export async function POST(
   context: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = await context.params;
-
     const body = (await request.json()) as ProjectTileCreatePayload;
     const name = typeof body?.name === "string" ? body.name.trim() : "";
     const role = body?.role;
@@ -63,12 +61,11 @@ export async function POST(
       return NextResponse.json({ error: "Tile role is invalid." }, { status: 400 });
     }
 
-    const store = loadStore();
-    const resolved = resolveProjectOrResponse(store, projectId);
+    const resolved = await resolveProjectFromParams(context.params);
     if (!resolved.ok) {
       return resolved.response;
     }
-    const { projectId: resolvedProjectId, project } = resolved;
+    const { store, projectId: resolvedProjectId, project } = resolved;
 
     const tileId = randomUUID();
     const projectSlug = path.basename(project.repoPath);
