@@ -29,7 +29,7 @@ This keeps feature cohesion high while preserving a clear client/server boundary
 - **Canvas UI** (`src/features/canvas`): React Flow canvas, tiles, editor UI, local in-memory state + actions.
 - **Projects** (`src/lib/projects`, `src/app/api/projects`): project/tile models, store persistence, workspace files, heartbeat settings, shared project/tile resolution (`src/lib/projects/resolve.ts`), shared store normalization in `src/app/api/projects/store.ts`, shared workspace file helpers in `src/lib/projects/workspaceFiles.ts`, agent-canvas path helper in `src/lib/projects/agentWorkspace.ts`, server-side filesystem helpers (`src/lib/projects/fs.server.ts`) for agent cleanup.
 - **Gateway** (`src/lib/gateway`): WebSocket client for agent runtime (frames, connect, request/response).
-- **Clawdbot config + paths** (`src/lib/clawdbot`): read/write moltbot.json, agent list and heartbeat defaults, consolidated state/config/.env path resolution (`src/lib/clawdbot/paths.ts`).
+- **Clawdbot config + paths** (`src/lib/clawdbot`): read/write moltbot.json, shared agent list helpers (used by heartbeat routes), heartbeat defaults, consolidated state/config/.env path resolution (`src/lib/clawdbot/paths.ts`).
 - **Discord integration** (`src/lib/discord`, API route): channel provisioning and config binding.
 - **Shared utilities** (`src/lib/*`): env, ids, names, avatars, text parsing, logging, filesystem helpers.
 
