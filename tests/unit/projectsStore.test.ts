@@ -76,6 +76,18 @@ describe("projectsStore", () => {
     expect(normalized.activeProjectId).toBe("b");
   });
 
+  it("drops archived active project", () => {
+    const projectA = makeProject("a");
+    const projectB = { ...makeProject("b"), archivedAt: Date.now() };
+    const store: ProjectsStore = {
+      version: 3,
+      activeProjectId: "b",
+      projects: [projectA, projectB],
+    };
+    const normalized = normalizeProjectsStore(store);
+    expect(normalized.activeProjectId).toBe("a");
+  });
+
   it("normalizesNonArrayProjects", () => {
     const store = {
       version: 3,

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "sync:gateway-client": "node scripts/sync-openclaw-gateway-client.ts",
+    "migrate:architecture": "node scripts/migrate-architecture.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "e2e": "playwright test"
