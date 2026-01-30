@@ -4,12 +4,8 @@ Thanks for helping improve clawdbot-agent-ui. Please use GitHub Issues for bugs 
 
 ## Before you start
 - Install Clawdbot/Moltbot and confirm the gateway runs locally.
-- Use a dedicated state dir when testing to avoid changing your real config.
-
-Example:
-```bash
-MOLTBOT_STATE_DIR=~/moltbot-dev npm run dev
-```
+- This repo is UI-only and reads config from `~/.clawdbot` or `~/.moltbot`.
+- It does not run or build the gateway from source.
 
 ## Local setup
 ```bash
@@ -37,3 +33,39 @@ When filing an issue, please include:
 - Reproduction steps
 - OS and Node version
 - Any relevant logs or screenshots
+
+## Minimal PR template
+```md
+## Summary
+- 
+
+## Testing
+- [ ] Not run (explain why)
+- [ ] `npm run lint`
+- [ ] `npm run typecheck`
+- [ ] `npm run test`
+- [ ] `npm run e2e`
+
+## AI-assisted
+- [ ] AI-assisted (briefly describe what and include prompts/logs if helpful)
+```
+
+## Minimal issue template
+```md
+## Summary
+
+## Steps to reproduce
+1.
+
+## Expected
+
+## Actual
+
+## Environment
+- OS:
+- Node:
+- UI version/commit:
+- Gateway running? (yes/no)
+
+## Logs/screenshots
+```
