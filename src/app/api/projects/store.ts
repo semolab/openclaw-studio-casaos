@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import type { Project, ProjectTile, ProjectsStore } from "@/lib/projects/types";
-import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
+import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
 import { loadClawdbotConfig } from "@/lib/clawdbot/config";
 import { resolveDefaultAgentId } from "@/lib/clawdbot/resolveDefaultAgent";
 import { parseAgentIdFromSessionKey, buildSessionKey } from "@/lib/projects/sessionKey";

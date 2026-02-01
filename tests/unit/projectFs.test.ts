@@ -7,7 +7,7 @@ import path from "node:path";
 import { collectAgentIdsAndDeleteArtifacts, deleteDirIfExists } from "@/lib/projects/fs.server";
 import type { ProjectTile } from "@/lib/projects/types";
 import { resolveStateDir, resolveUserPath } from "@/lib/clawdbot/paths";
-import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
+import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
 
 let tempDir: string | null = null;
 let previousStateDir: string | undefined;

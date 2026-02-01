@@ -6,7 +6,7 @@ import {
   resolveDefaultAgentId,
   resolveDefaultWorkspacePath,
 } from "@/lib/clawdbot/resolveDefaultAgent";
-import { resolveAgentCanvasDir } from "@/lib/projects/agentWorkspace";
+import { resolveAgentCanvasDir } from "@/lib/projects/worktrees.server";
 
 type WorkspaceSettings = {
   workspacePath?: string;

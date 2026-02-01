@@ -2,13 +2,15 @@ import { expect, test } from "@playwright/test";
 
 import path from "node:path";
 
+import type { ProjectsStore, WorkspaceSettingsResult } from "@/lib/projects/types";
+
 test("workspace settings flow updates the header label", async ({ page }) => {
-  let projectsStore = {
+  let projectsStore: ProjectsStore = {
     version: 3,
     activeProjectId: null,
     projects: [],
   };
-  let workspaceSettings = {
+  let workspaceSettings: WorkspaceSettingsResult = {
     workspacePath: "/Users/default",
     workspaceName: "Workspace",
     defaultAgentId: "main",
