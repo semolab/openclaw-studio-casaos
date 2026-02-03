@@ -24,6 +24,7 @@ test.beforeEach(async ({ page }) => {
 
 test("canvas renders controls when disconnected", async ({ page }) => {
   await page.goto("/");
+  await page.getByTestId("view-mode-canvas").click();
 
   const pane = page.locator(".react-flow__pane");
   await expect(pane).toBeVisible();
@@ -34,6 +35,7 @@ test("canvas renders controls when disconnected", async ({ page }) => {
 
 test("canvas renders minimap when disconnected", async ({ page }) => {
   await page.goto("/");
+  await page.getByTestId("view-mode-canvas").click();
 
   const minimap = page.locator(".react-flow__minimap");
   await expect(minimap).toBeVisible();

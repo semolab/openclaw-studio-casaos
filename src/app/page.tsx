@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 // (ReactFlowInstance import removed)
 import { CanvasFlow } from "@/features/canvas/components/CanvasFlow";
+import { AgentTile as AgentTileCard } from "@/features/canvas/components/AgentTile";
 import { AgentInspectPanel } from "@/features/canvas/components/AgentInspectPanel";
+import { FleetSidebar } from "@/features/canvas/components/FleetSidebar";
 import { HeaderBar } from "@/features/canvas/components/HeaderBar";
 import { ConnectionPanel } from "@/features/canvas/components/ConnectionPanel";
 import { MIN_TILE_SIZE } from "@/lib/canvasTileDefaults";
@@ -28,7 +30,9 @@ import type { EventFrame } from "@/lib/gateway/frames";
 import type { GatewayModelChoice } from "@/lib/gateway/models";
 import {
   AgentCanvasProvider,
+  getFilteredAgents,
   getSelectedAgent,
+  type FocusFilter,
   useAgentCanvasStore,
 } from "@/features/canvas/state/store";
 import {
@@ -404,6 +408,8 @@ const AgentCanvasPage = () => {
 
   const { state, dispatch, hydrateAgents, setError, setLoading } = useAgentCanvasStore();
   const [showConnectionPanel, setShowConnectionPanel] = useState(false);
+  const [viewMode, setViewMode] = useState<"focused" | "canvas">("focused");
+  const [focusFilter, setFocusFilter] = useState<FocusFilter>("all");
   const [heartbeatTick, setHeartbeatTick] = useState(0);
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const stateRef = useRef(state);
@@ -428,6 +434,17 @@ const AgentCanvasPage = () => {
 
   const agents = state.agents;
   const selectedAgent = useMemo(() => getSelectedAgent(state), [state]);
+  const filteredAgents = useMemo(
+    () => getFilteredAgents(state, focusFilter),
+    [focusFilter, state]
+  );
+  const focusedAgent = useMemo(() => {
+    if (filteredAgents.length === 0) return null;
+    const selectedInFilter = selectedAgent
+      ? filteredAgents.find((entry) => entry.agentId === selectedAgent.agentId)
+      : null;
+    return selectedInFilter ?? filteredAgents[0] ?? null;
+  }, [filteredAgents, selectedAgent]);
   const inspectTile = useMemo(() => {
     if (!inspectAgentId) return null;
     return agents.find((entry) => entry.agentId === inspectAgentId) ?? null;
@@ -1060,23 +1077,43 @@ const AgentCanvasPage = () => {
   }, [client, loadSummarySnapshot, refreshHeartbeatLatestUpdate, status]);
 
   useEffect(() => {
+    const update = () => {
+      const node = viewportRef.current;
+      if (node) {
+        const rect = node.getBoundingClientRect();
+        setViewportSize({ width: rect.width, height: rect.height });
+        return;
+      }
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+    update();
     const node = viewportRef.current;
-    if (!node) return;
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      setViewportSize({ width, height });
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, []);
+    const observer = node ? new ResizeObserver(update) : null;
+    if (node && observer) {
+      observer.observe(node);
+    }
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [viewMode]);
 
   useEffect(() => {
     if (!state.selectedAgentId) return;
     if (agents.some((tile) => tile.agentId === state.selectedAgentId)) return;
     dispatch({ type: "selectAgent", agentId: null });
   }, [agents, dispatch, state.selectedAgentId]);
+
+  useEffect(() => {
+    if (viewMode !== "focused") return;
+    const nextId = focusedAgent?.agentId ?? null;
+    if (state.selectedAgentId === nextId) return;
+    dispatch({ type: "selectAgent", agentId: nextId });
+  }, [dispatch, focusedAgent, state.selectedAgentId, viewMode]);
 
   useEffect(() => {
     for (const tile of agents) {
@@ -1415,6 +1452,10 @@ const AgentCanvasPage = () => {
       if (role === "user") {
         return;
       }
+      dispatch({
+        type: "markActivity",
+        agentId,
+      });
       const nextTextRaw = extractText(payload.message);
       const nextText = nextTextRaw ? stripUiMetadata(nextTextRaw) : null;
       const nextThinking = extractThinking(payload.message ?? payload);
@@ -1585,6 +1626,10 @@ const AgentCanvasPage = () => {
       if (!match) return;
       const tile = state.agents.find((entry) => entry.agentId === match);
       if (!tile) return;
+      dispatch({
+        type: "markActivity",
+        agentId: match,
+      });
       const stream = typeof payload.stream === "string" ? payload.stream : "";
       const data =
         payload.data && typeof payload.data === "object"
@@ -1931,23 +1976,27 @@ const AgentCanvasPage = () => {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden">
-      <CanvasFlow
-        tiles={agents}
-        transform={state.canvas}
-        viewportRef={viewportRef}
-        selectedTileId={state.selectedAgentId}
-        canSend={status === "connected"}
-        onSelectTile={(id) => dispatch({ type: "selectAgent", agentId: id })}
-        onMoveTile={handleMoveTile}
-        onResizeTile={handleResizeTile}
-        onRenameTile={handleRenameAgent}
-        onDraftChange={handleDraftChange}
-        onSend={handleSend}
-        onAvatarShuffle={handleAvatarShuffle}
-        onNameShuffle={handleNameShuffle}
-        onInspectTile={handleInspectTile}
-        onUpdateTransform={(patch) => dispatch({ type: "setCanvas", patch })}
-      />
+      {viewMode === "canvas" ? (
+        <CanvasFlow
+          tiles={agents}
+          transform={state.canvas}
+          viewportRef={viewportRef}
+          selectedTileId={state.selectedAgentId}
+          canSend={status === "connected"}
+          onSelectTile={(id) => dispatch({ type: "selectAgent", agentId: id })}
+          onMoveTile={handleMoveTile}
+          onResizeTile={handleResizeTile}
+          onRenameTile={handleRenameAgent}
+          onDraftChange={handleDraftChange}
+          onSend={handleSend}
+          onAvatarShuffle={handleAvatarShuffle}
+          onNameShuffle={handleNameShuffle}
+          onInspectTile={handleInspectTile}
+          onUpdateTransform={(patch) => dispatch({ type: "setCanvas", patch })}
+        />
+      ) : (
+        <div className="absolute inset-0 bg-background/40" />
+      )}
 
       {inspectTile ? (
         <div
@@ -1986,6 +2035,8 @@ const AgentCanvasPage = () => {
             status={status}
             gatewayUrl={gatewayUrl}
             agentCount={agents.length}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
             onConnectionSettings={() => setShowConnectionPanel((prev) => !prev)}
           />
         </div>
@@ -2023,17 +2074,67 @@ const AgentCanvasPage = () => {
           </div>
         ) : null}
 
-        <div className="pointer-events-auto mt-auto flex justify-end">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-full border border-input bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:border-ring disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => void handleCleanUpLayout()}
-            disabled={agents.length === 0 || status !== "connected"}
-          >
-            <BrushCleaning className="h-4 w-4" aria-hidden="true" />
-            Clean up
-          </button>
-        </div>
+        {viewMode === "focused" ? (
+          <div className="pointer-events-auto mx-auto flex min-h-0 w-full max-w-7xl flex-1 gap-4">
+            <FleetSidebar
+              agents={filteredAgents}
+              selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
+              filter={focusFilter}
+              onFilterChange={setFocusFilter}
+              onSelectAgent={(agentId) =>
+                dispatch({ type: "selectAgent", agentId })
+              }
+            />
+            <div
+              className="glass-panel min-h-0 flex-1 p-2"
+              data-testid="focused-agent-panel"
+            >
+              {focusedAgent ? (
+                <AgentTileCard
+                  tile={focusedAgent}
+                  isSelected={false}
+                  canSend={status === "connected"}
+                  onInspect={() => handleInspectTile(focusedAgent.agentId)}
+                  onNameChange={(name) =>
+                    handleRenameAgent(focusedAgent.agentId, name)
+                  }
+                  onDraftChange={(value) =>
+                    handleDraftChange(focusedAgent.agentId, value)
+                  }
+                  onSend={(message) =>
+                    handleSend(
+                      focusedAgent.agentId,
+                      focusedAgent.sessionKey,
+                      message
+                    )
+                  }
+                  onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
+                  onNameShuffle={() => handleNameShuffle(focusedAgent.agentId)}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
+                  {agents.length > 0
+                    ? "No agents match this filter."
+                    : "No agents available."}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {viewMode === "canvas" ? (
+          <div className="pointer-events-auto mt-auto flex justify-end">
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-full border border-input bg-background px-4 py-2 text-sm font-semibold text-foreground shadow-sm transition hover:border-ring disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => void handleCleanUpLayout()}
+              disabled={agents.length === 0 || status !== "connected"}
+            >
+              <BrushCleaning className="h-4 w-4" aria-hidden="true" />
+              Clean up
+            </button>
+          </div>
+        ) : null}
 
       </div>
     </div>

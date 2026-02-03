@@ -1,11 +1,15 @@
 import type { GatewayStatus } from "@/lib/gateway/GatewayClient";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+export type StudioViewMode = "focused" | "canvas";
+
 type HeaderBarProps = {
   status: GatewayStatus;
   gatewayUrl: string;
   agentCount: number;
   onConnectionSettings: () => void;
+  viewMode: StudioViewMode;
+  onViewModeChange: (mode: StudioViewMode) => void;
 };
 
 const statusDotStyles: Record<GatewayStatus, string> = {
@@ -25,6 +29,8 @@ export const HeaderBar = ({
   gatewayUrl,
   agentCount,
   onConnectionSettings,
+  viewMode,
+  onViewModeChange,
 }: HeaderBarProps) => {
   return (
     <div className="glass-panel px-6 py-4">
@@ -45,6 +51,34 @@ export const HeaderBar = ({
               aria-hidden="true"
             />
             {statusLabel[status]}
+          </div>
+          <div className="inline-flex items-center rounded-lg border border-border bg-card p-1">
+            <button
+              type="button"
+              data-testid="view-mode-focused"
+              aria-pressed={viewMode === "focused"}
+              className={`rounded-md px-3 py-1 text-xs font-semibold uppercase transition ${
+                viewMode === "focused"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-card"
+              }`}
+              onClick={() => onViewModeChange("focused")}
+            >
+              Focused
+            </button>
+            <button
+              type="button"
+              data-testid="view-mode-canvas"
+              aria-pressed={viewMode === "canvas"}
+              className={`rounded-md px-3 py-1 text-xs font-semibold uppercase transition ${
+                viewMode === "canvas"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-card"
+              }`}
+              onClick={() => onViewModeChange("canvas")}
+            >
+              Canvas
+            </button>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
