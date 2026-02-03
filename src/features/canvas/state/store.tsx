@@ -27,6 +27,8 @@ export type AgentSeed = {
   avatarUrl?: string | null;
   model?: string | null;
   thinkingLevel?: string | null;
+  toolCallingEnabled?: boolean;
+  showThinkingTraces?: boolean;
 };
 
 export type AgentTile = AgentSeed & {
@@ -45,6 +47,8 @@ export type AgentTile = AgentSeed & {
   draft: string;
   sessionSettingsSynced: boolean;
   historyLoadedAt: number | null;
+  toolCallingEnabled: boolean;
+  showThinkingTraces: boolean;
 };
 
 export type CanvasTransform = {
@@ -113,6 +117,8 @@ const createRuntimeAgent = (seed: AgentSeed, existing?: AgentTile | null): Agent
     draft: existing?.draft ?? "",
     sessionSettingsSynced: existing?.sessionSettingsSynced ?? false,
     historyLoadedAt: existing?.historyLoadedAt ?? null,
+    toolCallingEnabled: seed.toolCallingEnabled ?? existing?.toolCallingEnabled ?? true,
+    showThinkingTraces: seed.showThinkingTraces ?? existing?.showThinkingTraces ?? true,
   };
 };
 

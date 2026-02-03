@@ -249,11 +249,13 @@ export const AgentTile = ({
     for (const line of tile.outputLines) {
       if (!line) continue;
       if (isTraceMarkdown(line)) {
+        if (!tile.showThinkingTraces) continue;
         const text = stripTraceMarkdown(line).trim();
         if (text) items.push({ kind: "trace", text });
         continue;
       }
       if (isToolMarkdown(line)) {
+        if (!tile.toolCallingEnabled) continue;
         items.push({ kind: "tool", text: line });
         continue;
       }
@@ -266,7 +268,7 @@ export const AgentTile = ({
       items.push({ kind: "assistant", text: line });
     }
     const liveThinking = tile.thinkingTrace?.trim();
-    if (liveThinking) {
+    if (tile.showThinkingTraces && liveThinking) {
       items.push({ kind: "trace", text: liveThinking, live: true });
     }
     const liveStream = tile.streamText?.trim();
@@ -274,7 +276,13 @@ export const AgentTile = ({
       items.push({ kind: "assistant", text: liveStream, live: true });
     }
     return items;
-  }, [tile.outputLines, tile.streamText, tile.thinkingTrace]);
+  }, [
+    tile.outputLines,
+    tile.showThinkingTraces,
+    tile.streamText,
+    tile.thinkingTrace,
+    tile.toolCallingEnabled,
+  ]);
 
   const avatarSeed = tile.avatarSeed ?? tile.agentId;
   const resizeHandleClass = isSelected

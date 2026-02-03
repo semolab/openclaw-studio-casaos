@@ -30,6 +30,8 @@ type AgentInspectPanelProps = {
   onDelete: () => void;
   onModelChange: (value: string | null) => void;
   onThinkingChange: (value: string | null) => void;
+  onToolCallingToggle: (enabled: boolean) => void;
+  onThinkingTracesToggle: (enabled: boolean) => void;
 };
 
 export const AgentInspectPanel = ({
@@ -40,6 +42,8 @@ export const AgentInspectPanel = ({
   onDelete,
   onModelChange,
   onThinkingChange,
+  onToolCallingToggle,
+  onThinkingTracesToggle,
 }: AgentInspectPanelProps) => {
   const [workspaceFiles, setWorkspaceFiles] = useState(createWorkspaceFilesState);
   const [workspaceTab, setWorkspaceTab] = useState<WorkspaceFileName>(
@@ -521,6 +525,27 @@ export const AgentInspectPanel = ({
             ) : (
               <div />
             )}
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+              <span>Enable tool calling</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-input text-foreground"
+                checked={tile.toolCallingEnabled}
+                onChange={(event) => onToolCallingToggle(event.target.checked)}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
+              <span>Show thinking traces</span>
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-input text-foreground"
+                checked={tile.showThinkingTraces}
+                onChange={(event) => onThinkingTracesToggle(event.target.checked)}
+              />
+            </label>
           </div>
 
           <div className="mt-4 rounded-lg border border-border bg-card p-4">

@@ -55,3 +55,6 @@ test-results
 /worktrees
 
 AGENTS.md
+
+# local issue tracker
+/.beads

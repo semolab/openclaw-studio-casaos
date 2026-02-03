@@ -1209,6 +1209,25 @@ const AgentCanvasPage = () => {
     }
   }, [agents, loadTileHistory, shouldAutoLoadHistory, status]);
 
+  useEffect(() => {
+    if (status !== "connected") return;
+    const hasRunning = agents.some((tile) => tile.status === "running");
+    if (!hasRunning) return;
+    for (const tile of stateRef.current.agents) {
+      if (tile.status !== "running") continue;
+      void loadTileHistory(tile.agentId);
+    }
+    const timer = window.setInterval(() => {
+      for (const tile of stateRef.current.agents) {
+        if (tile.status !== "running") continue;
+        void loadTileHistory(tile.agentId);
+      }
+    }, 1500);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [agents, loadTileHistory, status]);
+
   const handleSend = useCallback(
     async (agentId: string, sessionKey: string, message: string) => {
       const trimmed = message.trim();
@@ -1345,6 +1364,29 @@ const AgentCanvasPage = () => {
       }
     },
     [client, dispatch]
+  );
+
+
+  const handleToolCallingToggle = useCallback(
+    (agentId: string, enabled: boolean) => {
+      dispatch({
+        type: "updateAgent",
+        agentId,
+        patch: { toolCallingEnabled: enabled },
+      });
+    },
+    [dispatch]
+  );
+
+  const handleThinkingTracesToggle = useCallback(
+    (agentId: string, enabled: boolean) => {
+      dispatch({
+        type: "updateAgent",
+        agentId,
+        patch: { showThinkingTraces: enabled },
+      });
+    },
+    [dispatch]
   );
 
   useEffect(() => {
@@ -1927,6 +1969,12 @@ const AgentCanvasPage = () => {
             }
             onThinkingChange={(value) =>
               handleThinkingChange(inspectTile.agentId, inspectTile.sessionKey, value)
+            }
+            onToolCallingToggle={(enabled) =>
+              handleToolCallingToggle(inspectTile.agentId, enabled)
+            }
+            onThinkingTracesToggle={(enabled) =>
+              handleThinkingTracesToggle(inspectTile.agentId, enabled)
             }
           />
         </div>

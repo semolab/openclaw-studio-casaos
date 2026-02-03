@@ -34,6 +34,8 @@ const makeTile = (
   draft: "",
   sessionSettingsSynced: false,
   historyLoadedAt: null,
+  toolCallingEnabled: true,
+  showThinkingTraces: true,
 });
 
 const getBounds = (tiles: AgentTile[]): Bounds => {
