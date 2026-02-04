@@ -45,6 +45,8 @@ next-env.d.ts
 playwright-report
 test-results
 .playwright-home
+/.playwright-cli
+/output/playwright
 
 # agent state
 /.agent
