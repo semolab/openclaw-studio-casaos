@@ -1,6 +1,6 @@
-import { createElement, useState } from "react";
+import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { AgentState } from "@/features/agents/state/store";
 import { AgentBrainPanel } from "@/features/agents/components/AgentBrainPanel";
 
@@ -76,7 +76,7 @@ describe("AgentBrainPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders_agent_list_and_file_tabs", async () => {
+  it("renders_selected_agent_file_tabs", async () => {
     const agents = [
       createAgent("agent-1", "Alpha", "session-1"),
       createAgent("agent-2", "Beta", "session-2"),
@@ -86,46 +86,14 @@ describe("AgentBrainPanel", () => {
       createElement(AgentBrainPanel, {
         agents,
         selectedAgentId: "agent-1",
-        onSelectAgent: vi.fn(),
         onClose: vi.fn(),
       })
     );
 
-    expect(screen.getByTestId("agent-brain-list")).toBeInTheDocument();
-    expect(screen.getByTestId("agent-brain-agent-agent-1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "AGENTS" })).toBeInTheDocument();
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("alpha agents")).toBeInTheDocument();
-    });
-  });
-
-  it("switching_agent_changes_active_editor_target", async () => {
-    const agents = [
-      createAgent("agent-1", "Alpha", "session-1"),
-      createAgent("agent-2", "Beta", "session-2"),
-    ];
-
-    const Harness = () => {
-      const [selectedAgentId, setSelectedAgentId] = useState<string | null>("agent-1");
-      return createElement(AgentBrainPanel, {
-        agents,
-        selectedAgentId,
-        onSelectAgent: setSelectedAgentId,
-        onClose: vi.fn(),
-      });
-    };
-
-    render(createElement(Harness));
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("alpha agents")).toBeInTheDocument();
-    });
-
-    fireEvent.click(screen.getByTestId("agent-brain-agent-agent-2"));
-
-    await waitFor(() => {
-      expect(screen.getByDisplayValue("beta agents")).toBeInTheDocument();
     });
   });
 
@@ -136,7 +104,6 @@ describe("AgentBrainPanel", () => {
       createElement(AgentBrainPanel, {
         agents,
         selectedAgentId: "agent-1",
-        onSelectAgent: vi.fn(),
         onClose: vi.fn(),
       })
     );

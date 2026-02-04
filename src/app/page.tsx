@@ -360,7 +360,6 @@ const AgentStudioPage = () => {
   const [mobilePane, setMobilePane] = useState<MobilePane>("chat");
   const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null);
   const [brainPanelOpen, setBrainPanelOpen] = useState(false);
-  const [brainAgentId, setBrainAgentId] = useState<string | null>(null);
   const studioSessionIdRef = useRef<string | null>(null);
   const thinkingDebugRef = useRef<Set<string>>(new Set());
   const chatRunSeenRef = useRef<Set<string>>(new Set());
@@ -387,11 +386,8 @@ const AgentStudioPage = () => {
     return agents.find((entry) => entry.agentId === settingsAgentId) ?? null;
   }, [agents, settingsAgentId]);
   const selectedBrainAgentId = useMemo(() => {
-    if (brainAgentId && agents.some((entry) => entry.agentId === brainAgentId)) {
-      return brainAgentId;
-    }
     return focusedAgent?.agentId ?? agents[0]?.agentId ?? null;
-  }, [agents, brainAgentId, focusedAgent]);
+  }, [agents, focusedAgent]);
   const faviconSeed = useMemo(() => {
     const firstAgent = agents[0];
     const seed = firstAgent?.avatarSeed ?? firstAgent?.agentId ?? "";
@@ -1210,16 +1206,6 @@ const AgentStudioPage = () => {
       if (!next) return false;
       setSettingsAgentId(null);
       setMobilePane("brain");
-      setBrainAgentId((current) => {
-        if (current && stateRef.current.agents.some((entry) => entry.agentId === current)) {
-          return current;
-        }
-        return (
-          stateRef.current.selectedAgentId ??
-          stateRef.current.agents[0]?.agentId ??
-          null
-        );
-      });
       return true;
     });
   }, []);
@@ -1966,10 +1952,6 @@ const AgentStudioPage = () => {
                 <AgentBrainPanel
                   agents={agents}
                   selectedAgentId={selectedBrainAgentId}
-                  onSelectAgent={(agentId) => {
-                    setBrainAgentId(agentId);
-                    dispatch({ type: "selectAgent", agentId });
-                  }}
                   onClose={() => {
                     setBrainPanelOpen(false);
                     setMobilePane("chat");

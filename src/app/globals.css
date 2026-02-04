@@ -287,18 +287,10 @@ textarea:focus::-webkit-scrollbar {
   height: 100%;
   width: 100%;
   border-radius: var(--radius);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--sidebar) 90%, transparent) 0%,
-      color-mix(in oklch, var(--sidebar) 88%, var(--primary) 4%) 56%,
-      color-mix(in oklch, var(--sidebar) 84%, var(--accent) 3%) 100%
-    );
+  background: transparent;
   color: var(--sidebar-foreground);
-  border: 1px solid var(--sidebar-border);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, white 40%, transparent),
-    var(--shadow-lg);
+  border: 0;
+  box-shadow: none;
   overflow-y: auto;
 }
 
