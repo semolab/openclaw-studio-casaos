@@ -49,7 +49,7 @@ import {
   isSameSessionKey,
 } from "@/lib/gateway/sessionKeys";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
-import { fetchStudioSettings, updateStudioSettings } from "@/lib/studio/client";
+import { getStudioSettingsCoordinator } from "@/lib/studio/client";
 import { resolveFocusedPreference, resolveStudioSessionId } from "@/lib/studio/settings";
 import { generateUUID } from "@/lib/gateway/openclaw/uuid";
 
@@ -309,6 +309,7 @@ const findAgentByRunId = (agents: AgentState[], runId: string): string | null =>
 };
 
 const AgentStudioPage = () => {
+  const [settingsCoordinator] = useState(() => getStudioSettingsCoordinator());
   const {
     client,
     status,
@@ -328,6 +329,7 @@ const AgentStudioPage = () => {
   const [heartbeatTick, setHeartbeatTick] = useState(0);
   const historyInFlightRef = useRef<Set<string>>(new Set());
   const stateRef = useRef(state);
+  const focusFilterTouchedRef = useRef(false);
   const summaryRefreshRef = useRef<number | null>(null);
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [gatewayModelsError, setGatewayModelsError] = useState<string | null>(null);
@@ -339,7 +341,6 @@ const AgentStudioPage = () => {
   const specialUpdateInFlightRef = useRef<Set<string>>(new Set());
   const toolLinesSeenRef = useRef<Map<string, Set<string>>>(new Map());
   const assistantStreamByRunRef = useRef<Map<string, string>>(new Map());
-  const focusedSaveTimerRef = useRef<number | null>(null);
 
   const agents = state.agents;
   const selectedAgent = useMemo(() => getSelectedAgent(state), [state]);
@@ -368,6 +369,11 @@ const AgentStudioPage = () => {
     [faviconSeed]
   );
   const errorMessage = state.error ?? gatewayModelsError;
+
+  const handleFocusFilterChange = useCallback((next: FocusFilter) => {
+    focusFilterTouchedRef.current = true;
+    setFocusFilter(next);
+  }, []);
 
   useEffect(() => {
     const selector = 'link[data-agent-favicon="true"]';
@@ -663,7 +669,7 @@ const AgentStudioPage = () => {
         const key = gatewayUrl.trim();
         if (key) {
           try {
-            await updateStudioSettings({
+            await settingsCoordinator.applyPatchNow({
               sessions: { [key]: sessionId },
             });
           } catch (err) {
@@ -736,6 +742,7 @@ const AgentStudioPage = () => {
     resolveAgentName,
     setError,
     setLoading,
+    settingsCoordinator,
     gatewayUrl,
     status,
   ]);
@@ -753,20 +760,21 @@ const AgentStudioPage = () => {
       return;
     }
     setFocusedPreferencesLoaded(false);
+    focusFilterTouchedRef.current = false;
     const loadFocusedPreferences = async () => {
       try {
-        const settingsResult = await fetchStudioSettings();
-        if (
-          cancelled ||
-          !settingsResult.settings
-        ) {
+        const settings = await settingsCoordinator.loadSettings();
+        if (cancelled || !settings) {
           return;
         }
-        const persistedSessionId = resolveStudioSessionId(settingsResult.settings, key);
+        if (focusFilterTouchedRef.current) {
+          return;
+        }
+        const persistedSessionId = resolveStudioSessionId(settings, key);
         if (persistedSessionId) {
           studioSessionIdRef.current = persistedSessionId;
         }
-        const preference = resolveFocusedPreference(settingsResult.settings, key);
+        const preference = resolveFocusedPreference(settings, key);
         if (preference) {
           setFocusFilter(preference.filter);
           dispatch({
@@ -788,26 +796,19 @@ const AgentStudioPage = () => {
     return () => {
       cancelled = true;
     };
-  }, [dispatch, gatewayUrl]);
+  }, [dispatch, gatewayUrl, settingsCoordinator]);
 
   useEffect(() => {
     return () => {
-      if (focusedSaveTimerRef.current !== null) {
-        window.clearTimeout(focusedSaveTimerRef.current);
-        focusedSaveTimerRef.current = null;
-      }
+      void settingsCoordinator.flushPending();
     };
-  }, []);
+  }, [settingsCoordinator]);
 
   useEffect(() => {
     const key = gatewayUrl.trim();
     if (!focusedPreferencesLoaded || !key) return;
-    if (focusedSaveTimerRef.current !== null) {
-      window.clearTimeout(focusedSaveTimerRef.current);
-    }
-    focusedSaveTimerRef.current = window.setTimeout(() => {
-      focusedSaveTimerRef.current = null;
-      void updateStudioSettings({
+    settingsCoordinator.schedulePatch(
+      {
         focused: {
           [key]: {
             mode: "focused",
@@ -815,17 +816,10 @@ const AgentStudioPage = () => {
             selectedAgentId: stateRef.current.selectedAgentId,
           },
         },
-      }).catch((err) => {
-        logger.error("Failed to save focused preference.", err);
-      });
-    }, 300);
-    return () => {
-      if (focusedSaveTimerRef.current !== null) {
-        window.clearTimeout(focusedSaveTimerRef.current);
-        focusedSaveTimerRef.current = null;
-      }
-    };
-  }, [focusFilter, focusedPreferencesLoaded, gatewayUrl, state.selectedAgentId]);
+      },
+      300
+    );
+  }, [focusFilter, focusedPreferencesLoaded, gatewayUrl, state.selectedAgentId, settingsCoordinator]);
 
   useEffect(() => {
     if (status !== "connected" || !focusedPreferencesLoaded) return;
@@ -1831,7 +1825,7 @@ const AgentStudioPage = () => {
             agents={filteredAgents}
             selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
             filter={focusFilter}
-            onFilterChange={setFocusFilter}
+            onFilterChange={handleFocusFilterChange}
             onSelectAgent={(agentId) =>
               dispatch({ type: "selectAgent", agentId })
             }

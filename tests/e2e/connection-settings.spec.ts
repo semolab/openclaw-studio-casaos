@@ -6,7 +6,9 @@ test("connection settings persist to the studio settings API", async ({ page }) 
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ settings: { version: 1, gateway: null, focused: {} } }),
+        body: JSON.stringify({
+          settings: { version: 1, gateway: null, focused: {}, sessions: {} },
+        }),
       });
       return;
     }
@@ -16,7 +18,12 @@ test("connection settings persist to the studio settings API", async ({ page }) 
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          settings: { version: 1, gateway: payload.gateway ?? null, focused: {} },
+          settings: {
+            version: 1,
+            gateway: payload.gateway ?? null,
+            focused: {},
+            sessions: {},
+          },
         }),
       });
       return;

@@ -7,7 +7,7 @@ import {
   GatewayStatus,
 } from "./GatewayClient";
 import { env } from "@/lib/env";
-import type { StudioSettings } from "@/lib/studio/settings";
+import { getStudioSettingsCoordinator } from "@/lib/studio/client";
 
 const DEFAULT_GATEWAY_URL = env.NEXT_PUBLIC_GATEWAY_URL ?? "ws://127.0.0.1:18789";
 const formatGatewayError = (error: unknown) => {
@@ -35,6 +35,7 @@ export type GatewayConnectionState = {
 
 export const useGatewayConnection = (): GatewayConnectionState => {
   const [client] = useState(() => new GatewayClient());
+  const [settingsCoordinator] = useState(() => getStudioSettingsCoordinator());
   const didAutoConnect = useRef(false);
 
   const [gatewayUrl, setGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
@@ -42,19 +43,13 @@ export const useGatewayConnection = (): GatewayConnectionState => {
   const [status, setStatus] = useState<GatewayStatus>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const saveTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const loadSettings = async () => {
       try {
-        const res = await fetch("/api/studio", { cache: "no-store" });
-        if (!res.ok) {
-          setSettingsLoaded(true);
-          return;
-        }
-        const data = (await res.json()) as { settings?: StudioSettings };
-        const gateway = data.settings?.gateway ?? null;
+        const settings = await settingsCoordinator.loadSettings();
+        const gateway = settings?.gateway ?? null;
         if (cancelled) return;
         if (gateway?.url) {
           setGatewayUrl(gateway.url);
@@ -76,27 +71,7 @@ export const useGatewayConnection = (): GatewayConnectionState => {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const saveSettings = useCallback(
-    async (nextUrl: string, nextToken: string) => {
-      try {
-        await fetch("/api/studio", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            gateway: {
-              url: nextUrl.trim(),
-              token: nextToken,
-            },
-          }),
-        });
-      } catch {
-        setError("Failed to save gateway settings.");
-      }
-    },
-    []
-  );
+  }, [settingsCoordinator]);
 
   useEffect(() => {
     return client.onStatus((nextStatus) => {
@@ -109,9 +84,10 @@ export const useGatewayConnection = (): GatewayConnectionState => {
 
   useEffect(() => {
     return () => {
+      void settingsCoordinator.flushPending();
       client.disconnect();
     };
-  }, [client]);
+  }, [client, settingsCoordinator]);
 
   const connect = useCallback(async () => {
     setError(null);
@@ -132,20 +108,16 @@ export const useGatewayConnection = (): GatewayConnectionState => {
 
   useEffect(() => {
     if (!settingsLoaded) return;
-    if (saveTimerRef.current !== null) {
-      window.clearTimeout(saveTimerRef.current);
-    }
-    saveTimerRef.current = window.setTimeout(() => {
-      saveTimerRef.current = null;
-      void saveSettings(gatewayUrl, token);
-    }, 400);
-    return () => {
-      if (saveTimerRef.current !== null) {
-        window.clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = null;
-      }
-    };
-  }, [gatewayUrl, saveSettings, settingsLoaded, token]);
+    settingsCoordinator.schedulePatch(
+      {
+        gateway: {
+          url: gatewayUrl.trim(),
+          token,
+        },
+      },
+      400
+    );
+  }, [gatewayUrl, settingsCoordinator, settingsLoaded, token]);
 
   const disconnect = useCallback(() => {
     setError(null);

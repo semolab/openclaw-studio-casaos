@@ -6,7 +6,9 @@ test("loads focused studio empty state", async ({ page }) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ settings: { version: 1, gateway: null, focused: {} } }),
+        body: JSON.stringify({
+          settings: { version: 1, gateway: null, focused: {}, sessions: {} },
+        }),
       });
       return;
     }
@@ -17,7 +19,9 @@ test("loads focused studio empty state", async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ settings: { version: 1, gateway: null, focused: {} } }),
+      body: JSON.stringify({
+        settings: { version: 1, gateway: null, focused: {}, sessions: {} },
+      }),
     });
   });
 
