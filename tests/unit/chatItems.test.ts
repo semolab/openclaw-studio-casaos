@@ -60,4 +60,20 @@ describe("buildAgentChatItems", () => {
     expect(items.map((item) => item.kind)).toEqual(["assistant", "thinking", "assistant"]);
     expect(items[1]).toMatchObject({ kind: "thinking", text: "_first plan_", live: true });
   });
+
+  it("merges adjacent thinking traces into a single item", () => {
+    const items = buildAgentChatItems({
+      outputLines: [formatThinkingMarkdown("first plan"), formatThinkingMarkdown("second plan"), "answer"],
+      streamText: null,
+      liveThinkingTrace: "",
+      showThinkingTraces: true,
+      toolCallingEnabled: true,
+    });
+
+    expect(items.map((item) => item.kind)).toEqual(["thinking", "assistant"]);
+    expect(items[0]).toMatchObject({
+      kind: "thinking",
+      text: "_first plan_\n\n_second plan_",
+    });
+  });
 });

@@ -52,15 +52,38 @@ export const buildAgentChatItems = ({
   toolCallingEnabled,
 }: BuildAgentChatItemsInput): AgentChatItem[] => {
   const items: AgentChatItem[] = [];
+  const appendThinking = (text: string, live?: boolean) => {
+    const normalized = text.trim();
+    if (!normalized) return;
+    const previous = items[items.length - 1];
+    if (!previous || previous.kind !== "thinking") {
+      items.push({ kind: "thinking", text: normalized, live });
+      return;
+    }
+    if (previous.text === normalized) {
+      if (live) previous.live = true;
+      return;
+    }
+    if (normalized.startsWith(previous.text)) {
+      previous.text = normalized;
+      if (live) previous.live = true;
+      return;
+    }
+    if (previous.text.startsWith(normalized)) {
+      if (live) previous.live = true;
+      return;
+    }
+    previous.text = `${previous.text}\n\n${normalized}`;
+    if (live) previous.live = true;
+  };
+
   for (const line of outputLines) {
     if (!line) continue;
     if (isTraceMarkdown(line)) {
       if (!showThinkingTraces) continue;
       const text = stripTraceMarkdown(line).trim();
       if (!text) continue;
-      const previous = items[items.length - 1];
-      if (previous?.kind === "thinking" && previous.text === text) continue;
-      items.push({ kind: "thinking", text });
+      appendThinking(text);
       continue;
     }
     if (isToolMarkdown(line)) {
@@ -82,10 +105,7 @@ export const buildAgentChatItems = ({
   if (showThinkingTraces) {
     const normalizedLiveThinking = normalizeThinkingDisplayText(liveThinkingTrace);
     if (normalizedLiveThinking) {
-      const previous = items[items.length - 1];
-      if (!(previous?.kind === "thinking" && previous.text === normalizedLiveThinking)) {
-        items.push({ kind: "thinking", text: normalizedLiveThinking, live: true });
-      }
+      appendThinking(normalizedLiveThinking, true);
     }
   }
 

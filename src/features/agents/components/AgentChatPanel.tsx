@@ -222,7 +222,7 @@ export const AgentChatPanel = ({
                         open={item.live && agent.status === "running"}
                       >
                         <summary className="cursor-pointer select-none font-semibold">
-                          Thinking traces
+                          Thinking
                         </summary>
                         <div className="agent-markdown mt-1 text-foreground">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>

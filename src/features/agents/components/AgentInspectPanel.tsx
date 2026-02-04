@@ -543,7 +543,7 @@ export const AgentInspectPanel = ({
               />
             </label>
             <label className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold uppercase text-muted-foreground">
-              <span>Show thinking traces</span>
+              <span>Show thinking</span>
               <input
                 type="checkbox"
                 className="h-4 w-4 rounded border-input text-foreground"
