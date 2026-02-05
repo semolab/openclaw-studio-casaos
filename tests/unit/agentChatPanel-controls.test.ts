@@ -53,11 +53,13 @@ describe("AgentChatPanel controls", () => {
         isSelected: true,
         canSend: true,
         models,
+        stopBusy: false,
         onOpenSettings: vi.fn(),
         onModelChange: vi.fn(),
         onThinkingChange: vi.fn(),
         onDraftChange: vi.fn(),
         onSend: vi.fn(),
+        onStopRun: vi.fn(),
         onAvatarShuffle: vi.fn(),
       })
     );
@@ -78,11 +80,13 @@ describe("AgentChatPanel controls", () => {
         isSelected: true,
         canSend: true,
         models,
+        stopBusy: false,
         onOpenSettings: vi.fn(),
         onModelChange,
         onThinkingChange: vi.fn(),
         onDraftChange: vi.fn(),
         onSend: vi.fn(),
+        onStopRun: vi.fn(),
         onAvatarShuffle: vi.fn(),
       })
     );
@@ -101,11 +105,13 @@ describe("AgentChatPanel controls", () => {
         isSelected: true,
         canSend: true,
         models,
+        stopBusy: false,
         onOpenSettings: vi.fn(),
         onModelChange: vi.fn(),
         onThinkingChange,
         onDraftChange: vi.fn(),
         onSend: vi.fn(),
+        onStopRun: vi.fn(),
         onAvatarShuffle: vi.fn(),
       })
     );
@@ -125,16 +131,42 @@ describe("AgentChatPanel controls", () => {
         isSelected: true,
         canSend: true,
         models,
+        stopBusy: false,
         onOpenSettings,
         onModelChange: vi.fn(),
         onThinkingChange: vi.fn(),
         onDraftChange: vi.fn(),
         onSend: vi.fn(),
+        onStopRun: vi.fn(),
         onAvatarShuffle: vi.fn(),
       })
     );
 
     fireEvent.click(screen.getByTestId("agent-settings-toggle"));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows_stop_button_while_running_and_invokes_stop_handler", () => {
+    const onStopRun = vi.fn();
+
+    render(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), status: "running" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun,
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStopRun).toHaveBeenCalledTimes(1);
   });
 });

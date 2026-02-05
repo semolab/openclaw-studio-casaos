@@ -13,11 +13,13 @@ type AgentChatPanelProps = {
   isSelected: boolean;
   canSend: boolean;
   models: GatewayModelChoice[];
+  stopBusy: boolean;
   onOpenSettings: () => void;
   onModelChange: (value: string | null) => void;
   onThinkingChange: (value: string | null) => void;
   onDraftChange: (value: string) => void;
   onSend: (message: string) => void;
+  onStopRun: () => void;
   onAvatarShuffle: () => void;
 };
 
@@ -26,11 +28,13 @@ export const AgentChatPanel = ({
   isSelected,
   canSend,
   models,
+  stopBusy,
   onOpenSettings,
   onModelChange,
   onThinkingChange,
   onDraftChange,
   onSend,
+  onStopRun,
   onAvatarShuffle,
 }: AgentChatPanelProps) => {
   const [draftValue, setDraftValue] = useState(agent.draft);
@@ -320,6 +324,16 @@ export const AgentChatPanel = ({
             }}
             placeholder="type a message"
           />
+          {agent.status === "running" ? (
+            <button
+              className="rounded-md border border-border/80 bg-card/70 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground shadow-sm transition hover:bg-muted/70 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
+              type="button"
+              onClick={onStopRun}
+              disabled={!canSend || stopBusy}
+            >
+              {stopBusy ? "Stopping" : "Stop"}
+            </button>
+          ) : null}
           <button
             className="rounded-md border border-transparent bg-primary px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-foreground shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground disabled:shadow-none"
             type="button"

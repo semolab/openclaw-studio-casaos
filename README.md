@@ -19,6 +19,7 @@ OpenClaw Studio solves this. It's a Next.js app that connects to your OpenClaw g
 - Runs a focused agent-management UI (fleet list + primary agent + inspect sidebar)
 - Creates new agents directly from the fleet sidebar (`New Agent`)
 - Lets you change per-agent runtime model/thinking directly from the agent header
+- Lets you stop an in-flight run from the chat panel (`chat.abort`)
 - Keeps per-agent management actions in settings (rename, display toggles, new session, delete)
 - Lists per-agent cron jobs in settings and lets you run now or delete
 - Reads and edits agent files (AGENTS.md, MEMORY.md, etc.) via the gateway

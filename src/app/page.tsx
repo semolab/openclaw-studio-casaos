@@ -293,6 +293,7 @@ const AgentStudioPage = () => {
   const [gatewayModels, setGatewayModels] = useState<GatewayModelChoice[]>([]);
   const [gatewayModelsError, setGatewayModelsError] = useState<string | null>(null);
   const [createAgentBusy, setCreateAgentBusy] = useState(false);
+  const [stopBusyAgentId, setStopBusyAgentId] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>("chat");
   const [settingsAgentId, setSettingsAgentId] = useState<string | null>(null);
   const [settingsCronJobs, setSettingsCronJobs] = useState<CronJobSummary[]>([]);
@@ -1340,6 +1341,41 @@ const AgentStudioPage = () => {
     [client, dispatch]
   );
 
+  const handleStopRun = useCallback(
+    async (agentId: string, sessionKey: string) => {
+      if (status !== "connected") {
+        setError("Connect to gateway before stopping a run.");
+        return;
+      }
+      const resolvedSessionKey = sessionKey.trim();
+      if (!resolvedSessionKey) {
+        setError("Missing session key for agent.");
+        return;
+      }
+      if (stopBusyAgentId === agentId) {
+        return;
+      }
+      setStopBusyAgentId(agentId);
+      try {
+        await client.call("chat.abort", {
+          sessionKey: resolvedSessionKey,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to stop run.";
+        setError(message);
+        logger.error(message);
+        dispatch({
+          type: "appendOutput",
+          agentId,
+          line: `Stop failed: ${message}`,
+        });
+      } finally {
+        setStopBusyAgentId((current) => (current === agentId ? null : current));
+      }
+    },
+    [client, dispatch, setError, status, stopBusyAgentId]
+  );
+
   const handleSessionSettingChange = useCallback(
     async (
       agentId: string,
@@ -1958,6 +1994,7 @@ const AgentStudioPage = () => {
                   isSelected={false}
                   canSend={status === "connected"}
                   models={gatewayModels}
+                  stopBusy={stopBusyAgentId === focusedAgent.agentId}
                   onOpenSettings={() => handleOpenAgentSettings(focusedAgent.agentId)}
                   onModelChange={(value) =>
                     handleModelChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
@@ -1974,6 +2011,9 @@ const AgentStudioPage = () => {
                       focusedAgent.sessionKey,
                       message
                     )
+                  }
+                  onStopRun={() =>
+                    handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)
                   }
                   onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
                 />
