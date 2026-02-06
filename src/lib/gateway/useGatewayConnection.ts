@@ -37,13 +37,15 @@ export const useGatewayConnection = (): GatewayConnectionState => {
   const [client] = useState(() => new GatewayClient());
   const [settingsCoordinator] = useState(() => getStudioSettingsCoordinator());
   const didAutoConnect = useRef(false);
+  const loadedGatewaySettings = useRef<{ gatewayUrl: string; token: string } | null>(
+    null
+  );
 
   const [gatewayUrl, setGatewayUrl] = useState(DEFAULT_GATEWAY_URL);
   const [token, setToken] = useState("");
   const [status, setStatus] = useState<GatewayStatus>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [hasConnectedOnce, setHasConnectedOnce] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,18 +54,26 @@ export const useGatewayConnection = (): GatewayConnectionState => {
         const settings = await settingsCoordinator.loadSettings();
         const gateway = settings?.gateway ?? null;
         if (cancelled) return;
-        if (gateway?.url) {
-          setGatewayUrl(gateway.url);
-        }
-        if (typeof gateway?.token === "string") {
-          setToken(gateway.token);
-        }
+        const nextGatewayUrl = gateway?.url?.trim() ? gateway.url : DEFAULT_GATEWAY_URL;
+        const nextToken = typeof gateway?.token === "string" ? gateway.token : "";
+        loadedGatewaySettings.current = {
+          gatewayUrl: nextGatewayUrl.trim(),
+          token: nextToken,
+        };
+        setGatewayUrl(nextGatewayUrl);
+        setToken(nextToken);
       } catch {
         if (!cancelled) {
           setError("Failed to load gateway settings.");
         }
       } finally {
         if (!cancelled) {
+          if (!loadedGatewaySettings.current) {
+            loadedGatewaySettings.current = {
+              gatewayUrl: DEFAULT_GATEWAY_URL.trim(),
+              token: "",
+            };
+          }
           setSettingsLoaded(true);
         }
       }
@@ -77,9 +87,6 @@ export const useGatewayConnection = (): GatewayConnectionState => {
   useEffect(() => {
     return client.onStatus((nextStatus) => {
       setStatus(nextStatus);
-      if (nextStatus === "connected") {
-        setHasConnectedOnce(true);
-      }
       if (nextStatus !== "connecting") {
         setError(null);
       }
@@ -110,20 +117,24 @@ export const useGatewayConnection = (): GatewayConnectionState => {
     void connect();
   }, [connect, gatewayUrl, settingsLoaded]);
 
-  // Only persist gateway settings after a successful connection to avoid
-  // overwriting a valid token with an empty string on initial load
   useEffect(() => {
-    if (!settingsLoaded || !hasConnectedOnce) return;
+    if (!settingsLoaded) return;
+    const baseline = loadedGatewaySettings.current;
+    if (!baseline) return;
+    const nextGatewayUrl = gatewayUrl.trim();
+    if (nextGatewayUrl === baseline.gatewayUrl && token === baseline.token) {
+      return;
+    }
     settingsCoordinator.schedulePatch(
       {
         gateway: {
-          url: gatewayUrl.trim(),
+          url: nextGatewayUrl,
           token,
         },
       },
       400
     );
-  }, [gatewayUrl, hasConnectedOnce, settingsCoordinator, settingsLoaded, token]);
+  }, [gatewayUrl, settingsCoordinator, settingsLoaded, token]);
 
   const disconnect = useCallback(() => {
     setError(null);

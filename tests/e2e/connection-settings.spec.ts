@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("connection settings persist to the studio settings API", async ({ page }) => {
+  let putCount = 0;
   await page.route("**/api/studio", async (route, request) => {
     if (request.method() === "GET") {
       await route.fulfill({
@@ -13,6 +14,7 @@ test("connection settings persist to the studio settings API", async ({ page }) 
       return;
     }
     if (request.method() === "PUT") {
+      putCount += 1;
       const payload = JSON.parse(request.postData() ?? "{}") as Record<string, unknown>;
       await route.fulfill({
         status: 200,
@@ -34,6 +36,9 @@ test("connection settings persist to the studio settings API", async ({ page }) 
   await page.goto("/");
   await page.getByTestId("studio-menu-toggle").click();
   await page.getByTestId("gateway-settings-toggle").click();
+
+  await page.waitForTimeout(600);
+  expect(putCount).toBe(0);
 
   await page.getByLabel("Gateway URL").fill("ws://gateway.example:18789");
   await page.getByLabel("Token").fill("token-123");
