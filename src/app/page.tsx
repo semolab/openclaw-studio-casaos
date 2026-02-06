@@ -62,14 +62,12 @@ import {
   formatCronJobDisplay,
   listCronJobs,
   removeCronJob,
-  removeCronJobsForAgent,
   resolveLatestCronJobForAgent,
   runCronJobNow,
 } from "@/lib/cron/types";
 import {
   createGatewayAgent,
   renameGatewayAgent,
-  deleteGatewayAgent,
   removeGatewayHeartbeatOverride,
   listHeartbeatsForAgent,
   triggerHeartbeatNow,
@@ -110,6 +108,22 @@ type AgentsListResult = {
       avatarUrl?: string;
     };
   }>;
+};
+
+type AgentsDeleteResult = {
+  ok: true;
+  agentId: string;
+  removedConfig: boolean;
+  removedBindings: number;
+  removedAllow: number;
+  removedCronJobs: number;
+  workspace: string;
+  agentDir: string;
+  sessionsDir: string;
+  trashedWorkspace: boolean;
+  trashedAgentDir: boolean;
+  trashedSessionsDir: boolean;
+  trashDir: string;
 };
 
 type SessionsListEntry = {
@@ -1041,7 +1055,7 @@ const AgentStudioPage = () => {
       const agent = agents.find((entry) => entry.agentId === agentId);
       if (!agent) return;
       const confirmed = window.confirm(
-        `Delete ${agent.name}? This removes the agent from the gateway config and deletes its cron jobs.`
+        `Delete ${agent.name}? This prunes the agent's workspace/state on the gateway host (and removes its config + cron jobs).`
       );
       if (!confirmed) return;
       setDeleteAgentBlock({
@@ -1063,12 +1077,7 @@ const AgentStudioPage = () => {
                 phase: "deleting",
               };
             });
-            await removeCronJobsForAgent(client, agentId);
-            await deleteGatewayAgent({
-              client,
-              agentId,
-              sessionKey: agent.sessionKey,
-            });
+            await client.call<AgentsDeleteResult>("agents.delete", { agentId });
             setSettingsAgentId(null);
             setDeleteAgentBlock((current) => {
               if (!current || current.agentId !== agentId) return current;

@@ -74,6 +74,23 @@ Optional overrides:
 - `OPENCLAW_CONFIG_PATH`
 - `NEXT_PUBLIC_GATEWAY_URL`
 - `CLAWDBOT_DEFAULT_AGENT_ID`
+- `OPENCLAW_TASK_CONTROL_PLANE_BEADS_DIR` (local `.beads` directory for `/control-plane`)
+- `OPENCLAW_TASK_CONTROL_PLANE_GATEWAY_BEADS_DIR` (gateway-host `.beads` directory for `/control-plane`; runs `br` over SSH)
+- `OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET` (optional override for SSH target)
+- `OPENCLAW_TASK_CONTROL_PLANE_SSH_USER` (optional SSH user when deriving target from gateway URL)
+
+## Viewing Beads From An EC2 Gateway
+
+If your gateway is running on EC2 but Studio is running locally, you can point the Task Control Plane at the EC2 `.beads` workspace. Studio will fetch Beads status by running `br ... --json` on the gateway host over SSH.
+
+1. Connect Studio to your EC2 gateway (Settings in the UI, or set `NEXT_PUBLIC_GATEWAY_URL`).
+2. Confirm you can SSH to the EC2 host from your laptop without prompts (SSH keys and host key already accepted):
+   - Example: `ssh ubuntu@your-ec2-host 'br --version'`
+3. In `.env.local` (or `.env`), set:
+   - `OPENCLAW_TASK_CONTROL_PLANE_GATEWAY_BEADS_DIR=/home/ubuntu/repos/openclaw-studio-base/.beads`
+   - Optional: `OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET=ubuntu@your-ec2-host` (if Studio can't derive the SSH host from the configured gateway URL)
+4. Restart `npm run dev`.
+5. Open http://localhost:3000/control-plane (the JSON endpoint is http://localhost:3000/api/task-control-plane).
 
 To use a dedicated state dir during development:
 ```bash

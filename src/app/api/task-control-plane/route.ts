@@ -1,7 +1,10 @@
 import * as childProcess from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { NextResponse } from "next/server";
 
 import { buildTaskControlPlaneSnapshot } from "@/lib/task-control-plane/read-model";
+import { loadStudioSettings } from "@/lib/studio/settings-store";
 
 export const runtime = "nodejs";
 
@@ -70,6 +73,51 @@ const parseScopePath = (value: unknown): string | null => {
   return typeof path === "string" && path.trim().length > 0 ? path : null;
 };
 
+const BEADS_DIR_ENV = "OPENCLAW_TASK_CONTROL_PLANE_BEADS_DIR";
+const GATEWAY_BEADS_DIR_ENV = "OPENCLAW_TASK_CONTROL_PLANE_GATEWAY_BEADS_DIR";
+const SSH_TARGET_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET";
+const SSH_USER_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_USER";
+
+const resolveTaskControlPlaneCwd = (): string | undefined => {
+  const configured = process.env[BEADS_DIR_ENV];
+  if (!configured) return undefined;
+  const trimmed = configured.trim();
+  if (!trimmed) return undefined;
+
+  if (path.basename(trimmed) !== ".beads") {
+    throw new Error(
+      `${BEADS_DIR_ENV} must be an absolute path to a ".beads" directory (got: ${trimmed}).`
+    );
+  }
+
+  let stats: fs.Stats;
+  try {
+    stats = fs.statSync(trimmed);
+  } catch {
+    throw new Error(`${BEADS_DIR_ENV} does not exist on this host: ${trimmed}.`);
+  }
+  if (!stats.isDirectory()) {
+    throw new Error(`${BEADS_DIR_ENV} must point to a directory (got file): ${trimmed}.`);
+  }
+
+  return path.dirname(trimmed);
+};
+
+const resolveGatewayBeadsDir = (): string | undefined => {
+  const configured = process.env[GATEWAY_BEADS_DIR_ENV];
+  if (!configured) return undefined;
+  const trimmed = configured.trim();
+  if (!trimmed) return undefined;
+
+  if (!path.isAbsolute(trimmed) || path.basename(trimmed) !== ".beads") {
+    throw new Error(
+      `${GATEWAY_BEADS_DIR_ENV} must be an absolute path to a ".beads" directory on the gateway host (got: ${trimmed}).`
+    );
+  }
+
+  return trimmed;
+};
+
 async function loadTaskControlPlaneRawData(options?: {
   cwd?: string;
 }): Promise<{
@@ -94,6 +142,96 @@ async function loadTaskControlPlaneRawData(options?: {
   };
 }
 
+const quoteShellArg = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
+
+const resolveSshTarget = (): string => {
+  const configuredTarget = process.env[SSH_TARGET_ENV]?.trim() ?? "";
+  const configuredUser = process.env[SSH_USER_ENV]?.trim() ?? "";
+
+  if (configuredTarget) {
+    if (configuredTarget.includes("@")) return configuredTarget;
+    if (configuredUser) return `${configuredUser}@${configuredTarget}`;
+    return configuredTarget;
+  }
+
+  const settings = loadStudioSettings();
+  const gatewayUrl = settings.gateway?.url?.trim() ?? "";
+  if (!gatewayUrl) {
+    throw new Error(
+      `Remote beads configured but gateway URL is missing. Set it in Studio settings or set ${SSH_TARGET_ENV}.`
+    );
+  }
+  let hostname: string;
+  try {
+    hostname = new URL(gatewayUrl).hostname;
+  } catch {
+    throw new Error(`Invalid gateway URL in studio settings: ${gatewayUrl}`);
+  }
+  if (!hostname) {
+    throw new Error(`Invalid gateway URL in studio settings: ${gatewayUrl}`);
+  }
+
+  const user = configuredUser || "ubuntu";
+  return `${user}@${hostname}`;
+};
+
+const runBrJsonViaSsh = (command: string[], options: { sshTarget: string; cwd: string }) => {
+  const remote =
+    `cd ${quoteShellArg(options.cwd)} && ` +
+    `PATH=\"$HOME/.local/bin:$HOME/.cargo/bin:$PATH\" ` +
+    `br ${command.join(" ")} --json`;
+  const result = childProcess.spawnSync(
+    "ssh",
+    ["-o", "BatchMode=yes", options.sshTarget, remote],
+    { encoding: "utf8" }
+  );
+  if (result.error) {
+    throw new Error(`Failed to execute ssh: ${result.error.message}`);
+  }
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  if (result.status !== 0) {
+    const stderrText = stderr.trim();
+    const stdoutText = stdout.trim();
+    const message =
+      extractErrorMessage(stdout) ??
+      extractErrorMessage(stderr) ??
+      (stderrText || stdoutText || `Command failed: ssh ${options.sshTarget} <br>`);
+    throw new Error(message);
+  }
+  return parseJsonOutput(stdout, command);
+};
+
+async function loadTaskControlPlaneRawDataViaSsh(options: {
+  gatewayBeadsDir: string;
+}): Promise<{
+  scopePath: string | null;
+  openIssues: unknown;
+  inProgressIssues: unknown;
+  blockedIssues: unknown;
+}> {
+  const sshTarget = resolveSshTarget();
+  const cwd = path.dirname(options.gatewayBeadsDir);
+
+  const scope = runBrJsonViaSsh(["where"], { sshTarget, cwd });
+  const openIssues = runBrJsonViaSsh(["list", "--status", "open", "--limit", "0"], {
+    sshTarget,
+    cwd,
+  });
+  const inProgressIssues = runBrJsonViaSsh(["list", "--status", "in_progress", "--limit", "0"], {
+    sshTarget,
+    cwd,
+  });
+  const blockedIssues = runBrJsonViaSsh(["blocked", "--limit", "0"], { sshTarget, cwd });
+
+  return {
+    scopePath: parseScopePath(scope),
+    openIssues,
+    inProgressIssues,
+    blockedIssues,
+  };
+}
+
 const isBeadsWorkspaceError = (message: string) => {
   const lowered = message.toLowerCase();
   return lowered.includes("no beads directory found") || lowered.includes("not initialized");
@@ -101,7 +239,10 @@ const isBeadsWorkspaceError = (message: string) => {
 
 export async function GET() {
   try {
-    const raw = await loadTaskControlPlaneRawData();
+    const gatewayBeadsDir = resolveGatewayBeadsDir();
+    const raw = gatewayBeadsDir
+      ? await loadTaskControlPlaneRawDataViaSsh({ gatewayBeadsDir })
+      : await loadTaskControlPlaneRawData({ cwd: resolveTaskControlPlaneCwd() });
     const snapshot = buildTaskControlPlaneSnapshot(raw);
     return NextResponse.json({ snapshot });
   } catch (err) {

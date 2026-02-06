@@ -90,7 +90,7 @@ Flow:
 
 ### 6) Task control plane (Beads)
 - **UI boundary**: the `/control-plane` page fetches `TaskControlPlaneResponse` from `/api/task-control-plane`.
-- **Server boundary**: `src/app/api/task-control-plane/route.ts` runs the Beads CLI (`br`) via `node:child_process.spawnSync`, parses JSON output, and maps errors to HTTP 400 with a “Beads workspace not initialized…” message for init/workspace errors, and HTTP 502 for other failures.
+- **Server boundary**: `src/app/api/task-control-plane/route.ts` runs the Beads CLI (`br`) via `node:child_process.spawnSync`, parses JSON output, and maps errors to HTTP 400 with a “Beads workspace not initialized…” message for init/workspace errors, and HTTP 502 for other failures. If `OPENCLAW_TASK_CONTROL_PLANE_GATEWAY_BEADS_DIR` is set, the route runs `br ... --json` on the gateway host over SSH (host derived from the configured gateway URL unless `OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET` is set).
 - **Read-model boundary**: `src/lib/task-control-plane/read-model.ts` converts raw Beads lists into the UI snapshot shape.
 
 ## Cross-cutting concerns
