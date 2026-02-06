@@ -32,6 +32,7 @@ import {
 } from "@/lib/gateway/models";
 import {
   AgentStoreProvider,
+  buildNewSessionAgentPatch,
   getFilteredAgents,
   getSelectedAgent,
   type FocusFilter,
@@ -84,7 +85,6 @@ import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { getStudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import { resolveFocusedPreference } from "@/lib/studio/settings";
 import { applySessionSettingMutation } from "@/features/agents/state/sessionSettingsMutations";
-import { buildNewSessionAgentPatch } from "@/features/agents/state/agentSessionActions";
 import { syncGatewaySessionSettings } from "@/lib/gateway/sessionSettings";
 
 type ChatHistoryMessage = Record<string, unknown>;

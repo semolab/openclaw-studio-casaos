@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   agentStoreReducer,
+  buildNewSessionAgentPatch,
   getAttentionForAgent,
   getFilteredAgents,
   initialAgentStoreState,
@@ -26,6 +27,64 @@ describe("agent store", () => {
     expect(next.agents[0].thinkingLevel).toBe("high");
     expect(next.agents[0].sessionCreated).toBe(false);
     expect(next.agents[0].outputLines).toEqual([]);
+  });
+
+  it("builds a patch that resets runtime state for a session reset", () => {
+    const seed: AgentStoreSeed = {
+      agentId: "agent-1",
+      name: "Agent One",
+      sessionKey: "agent:agent-1:studio:old-session",
+    };
+    let state = agentStoreReducer(initialAgentStoreState, {
+      type: "hydrateAgents",
+      agents: [seed],
+    });
+    state = agentStoreReducer(state, {
+      type: "updateAgent",
+      agentId: "agent-1",
+      patch: {
+        status: "running",
+        awaitingUserInput: true,
+        hasUnseenActivity: true,
+        outputLines: ["> hello", "response"],
+        lastResult: "response",
+        lastDiff: "diff",
+        runId: "run-1",
+        streamText: "live",
+        thinkingTrace: "thinking",
+        latestOverride: "override",
+        latestOverrideKind: "heartbeat",
+        lastAssistantMessageAt: 1700000000000,
+        lastActivityAt: 1700000000001,
+        latestPreview: "preview",
+        lastUserMessage: "hello",
+        draft: "draft",
+        historyLoadedAt: 1700000000002,
+      },
+    });
+
+    const agent = state.agents.find((entry) => entry.agentId === "agent-1")!;
+    const patch = buildNewSessionAgentPatch(agent);
+
+    expect(patch.sessionKey).toBe("agent:agent-1:studio:old-session");
+    expect(patch.status).toBe("idle");
+    expect(patch.sessionCreated).toBe(true);
+    expect(patch.sessionSettingsSynced).toBe(true);
+    expect(patch.outputLines).toEqual([]);
+    expect(patch.streamText).toBeNull();
+    expect(patch.thinkingTrace).toBeNull();
+    expect(patch.lastResult).toBeNull();
+    expect(patch.lastDiff).toBeNull();
+    expect(patch.historyLoadedAt).toBeNull();
+    expect(patch.lastUserMessage).toBeNull();
+    expect(patch.runId).toBeNull();
+    expect(patch.latestPreview).toBeNull();
+    expect(patch.latestOverride).toBeNull();
+    expect(patch.latestOverrideKind).toBeNull();
+    expect(patch.lastAssistantMessageAt).toBeNull();
+    expect(patch.awaitingUserInput).toBe(false);
+    expect(patch.hasUnseenActivity).toBe(false);
+    expect(patch.draft).toBe("");
   });
 
   it("preserves_session_created_state_across_hydration", () => {
