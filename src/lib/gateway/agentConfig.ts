@@ -154,6 +154,42 @@ const applyGatewayConfigPatch = async (params: {
   }
 };
 
+type GatewayConfigMutationResult<T> =
+  | {
+      shouldPatch: true;
+      patch: Record<string, unknown>;
+      result: T;
+    }
+  | {
+      shouldPatch: false;
+      result: T;
+    };
+
+const withGatewayConfigMutation = async <T>(params: {
+  client: GatewayClient;
+  sessionKey?: string;
+  mutate: (input: {
+    snapshot: GatewayConfigSnapshot;
+    baseConfig: Record<string, unknown>;
+    list: ConfigAgentEntry[];
+  }) => GatewayConfigMutationResult<T>;
+}): Promise<T> => {
+  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
+  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
+  const list = readConfigAgentList(baseConfig);
+  const mutation = params.mutate({ snapshot, baseConfig, list });
+  if (mutation.shouldPatch) {
+    await applyGatewayConfigPatch({
+      client: params.client,
+      patch: mutation.patch,
+      baseHash: snapshot.hash ?? undefined,
+      exists: snapshot.exists,
+      sessionKey: params.sessionKey,
+    });
+  }
+  return mutation.result;
+};
+
 export const renameGatewayAgent = async (params: {
   client: GatewayClient;
   agentId: string;
@@ -164,25 +200,25 @@ export const renameGatewayAgent = async (params: {
   if (!trimmed) {
     throw new Error("Agent name is required.");
   }
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const { list: nextList, entry } = upsertConfigAgentEntry(
-    list,
-    params.agentId,
-    (entry: ConfigAgentEntry) => ({
-    ...entry,
-    name: trimmed,
-  }));
-  const patch = { agents: { list: nextList } };
-  await applyGatewayConfigPatch({
+  return withGatewayConfigMutation({
     client: params.client,
-    patch,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
     sessionKey: params.sessionKey,
+    mutate: ({ list }) => {
+      const { list: nextList, entry } = upsertConfigAgentEntry(
+        list,
+        params.agentId,
+        (entry: ConfigAgentEntry) => ({
+          ...entry,
+          name: trimmed,
+        })
+      );
+      return {
+        shouldPatch: true,
+        patch: { agents: { list: nextList } },
+        result: entry,
+      };
+    },
   });
-  return entry;
 };
 
 const createUniqueAgentId = (name: string, list: ConfigAgentEntry[]) => {
@@ -205,21 +241,20 @@ export const createGatewayAgent = async (params: {
   if (!trimmed) {
     throw new Error("Agent name is required.");
   }
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const id = createUniqueAgentId(trimmed, list);
-  const entry: ConfigAgentEntry = { id, name: trimmed };
-  const nextList = [...list, entry];
-  const patch = { agents: { list: nextList } };
-  await applyGatewayConfigPatch({
+  return withGatewayConfigMutation({
     client: params.client,
-    patch,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
     sessionKey: params.sessionKey,
+    mutate: ({ list }) => {
+      const id = createUniqueAgentId(trimmed, list);
+      const entry: ConfigAgentEntry = { id, name: trimmed };
+      const nextList = [...list, entry];
+      return {
+        shouldPatch: true,
+        patch: { agents: { list: nextList } },
+        result: entry,
+      };
+    },
   });
-  return entry;
 };
 
 export const deleteGatewayAgent = async (params: {
@@ -227,37 +262,44 @@ export const deleteGatewayAgent = async (params: {
   agentId: string;
   sessionKey?: string;
 }) => {
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const nextList = list.filter((entry) => entry.id !== params.agentId);
-  const bindings = Array.isArray(baseConfig.bindings) ? baseConfig.bindings : [];
-  const nextBindings = bindings.filter((binding) => {
-    if (!binding || typeof binding !== "object") return true;
-    const agentId = (binding as Record<string, unknown>).agentId;
-    return agentId !== params.agentId;
-  });
-  const patch: Record<string, unknown> = {};
-  if (nextList.length !== list.length) {
-    patch.agents = { list: nextList };
-  }
-  if (nextBindings.length !== bindings.length) {
-    patch.bindings = nextBindings;
-  }
-  if (Object.keys(patch).length === 0) {
-    return { removed: false, removedBindings: 0 };
-  }
-  await applyGatewayConfigPatch({
+  return withGatewayConfigMutation({
     client: params.client,
-    patch,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
     sessionKey: params.sessionKey,
+    mutate: ({ baseConfig, list }) => {
+      const nextList = list.filter((entry) => entry.id !== params.agentId);
+      const bindings = Array.isArray(baseConfig.bindings) ? baseConfig.bindings : [];
+      const nextBindings = bindings.filter((binding) => {
+        if (!binding || typeof binding !== "object") return true;
+        const agentId = (binding as Record<string, unknown>).agentId;
+        return agentId !== params.agentId;
+      });
+      const patch: Record<string, unknown> = {};
+      if (nextList.length !== list.length) {
+        patch.agents = { list: nextList };
+      }
+      if (nextBindings.length !== bindings.length) {
+        patch.bindings = nextBindings;
+      }
+      const shouldPatch = Object.keys(patch).length > 0;
+      if (!shouldPatch) {
+        return {
+          shouldPatch: false,
+          result: {
+            removed: false,
+            removedBindings: 0,
+          },
+        };
+      }
+      return {
+        shouldPatch: true,
+        patch,
+        result: {
+          removed: nextList.length !== list.length,
+          removedBindings: bindings.length - nextBindings.length,
+        },
+      };
+    },
   });
-  return {
-    removed: nextList.length !== list.length,
-    removedBindings: bindings.length - nextBindings.length,
-  };
 };
 
 export const updateGatewayHeartbeat = async (params: {
@@ -266,31 +308,31 @@ export const updateGatewayHeartbeat = async (params: {
   payload: AgentHeartbeatUpdatePayload;
   sessionKey?: string;
 }): Promise<AgentHeartbeatResult> => {
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const { list: nextList } = upsertConfigAgentEntry(
-    list,
-    params.agentId,
-    (entry: ConfigAgentEntry) => {
-    const next = { ...entry };
-    if (params.payload.override) {
-      next.heartbeat = buildHeartbeatOverride(params.payload.heartbeat);
-    } else if ("heartbeat" in next) {
-      delete next.heartbeat;
-    }
-    return next;
-  });
-  const patch = { agents: { list: nextList } };
-  await applyGatewayConfigPatch({
+  return withGatewayConfigMutation({
     client: params.client,
-    patch,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
     sessionKey: params.sessionKey,
+    mutate: ({ baseConfig, list }) => {
+      const { list: nextList } = upsertConfigAgentEntry(
+        list,
+        params.agentId,
+        (entry: ConfigAgentEntry) => {
+          const next = { ...entry };
+          if (params.payload.override) {
+            next.heartbeat = buildHeartbeatOverride(params.payload.heartbeat);
+          } else if ("heartbeat" in next) {
+            delete next.heartbeat;
+          }
+          return next;
+        }
+      );
+      const nextConfig = writeConfigAgentList(baseConfig, nextList);
+      return {
+        shouldPatch: true,
+        patch: { agents: { list: nextList } },
+        result: resolveHeartbeatSettings(nextConfig, params.agentId),
+      };
+    },
   });
-  const nextConfig = writeConfigAgentList(baseConfig, nextList);
-  return resolveHeartbeatSettings(nextConfig, params.agentId);
 };
 
 export const removeGatewayHeartbeatOverride = async (params: {
@@ -298,28 +340,29 @@ export const removeGatewayHeartbeatOverride = async (params: {
   agentId: string;
   sessionKey?: string;
 }): Promise<AgentHeartbeatResult> => {
-  const snapshot = await params.client.call<GatewayConfigSnapshot>("config.get", {});
-  const baseConfig = isRecord(snapshot.config) ? snapshot.config : {};
-  const list = readConfigAgentList(baseConfig);
-  const nextList = list.map((entry) => {
-    if (entry.id !== params.agentId) return entry;
-    if (!("heartbeat" in entry)) return entry;
-    const next = { ...entry };
-    delete next.heartbeat;
-    return next;
-  });
-  const changed = nextList.some((entry, index) => entry !== list[index]);
-  if (!changed) {
-    return resolveHeartbeatSettings(baseConfig, params.agentId);
-  }
-  const patch = { agents: { list: nextList } };
-  await applyGatewayConfigPatch({
+  return withGatewayConfigMutation({
     client: params.client,
-    patch,
-    baseHash: snapshot.hash ?? undefined,
-    exists: snapshot.exists,
     sessionKey: params.sessionKey,
+    mutate: ({ baseConfig, list }) => {
+      const nextList = list.map((entry) => {
+        if (entry.id !== params.agentId) return entry;
+        if (!("heartbeat" in entry)) return entry;
+        const next = { ...entry };
+        delete next.heartbeat;
+        return next;
+      });
+      const changed = nextList.some((entry, index) => entry !== list[index]);
+      if (!changed) {
+        return {
+          shouldPatch: false,
+          result: resolveHeartbeatSettings(baseConfig, params.agentId),
+        };
+      }
+      return {
+        shouldPatch: true,
+        patch: { agents: { list: nextList } },
+        result: resolveHeartbeatSettings(writeConfigAgentList(baseConfig, nextList), params.agentId),
+      };
+    },
   });
-  const nextConfig = writeConfigAgentList(baseConfig, nextList);
-  return resolveHeartbeatSettings(nextConfig, params.agentId);
 };

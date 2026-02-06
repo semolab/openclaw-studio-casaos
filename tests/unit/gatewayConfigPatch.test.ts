@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createGatewayAgent,
+  deleteGatewayAgent,
   renameGatewayAgent,
   resolveHeartbeatSettings,
+  removeGatewayHeartbeatOverride,
   updateGatewayHeartbeat,
 } from "@/lib/gateway/agentConfig";
 import type { GatewayClient } from "@/lib/gateway/GatewayClient";
@@ -72,6 +74,36 @@ describe("gateway config patch helpers", () => {
     expect(entry.id).toBe("new-agent-3");
   });
 
+  it("returns no-op on deleting a missing agent and skips config.patch", async () => {
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method === "config.get") {
+            return {
+            exists: true,
+            hash: "hash-del-1",
+            config: {
+              agents: { list: [{ id: "agent-1", name: "Agent One" }] },
+              bindings: [{ agentId: "agent-3", channel: "x" }],
+            },
+          };
+        }
+        if (method === "config.patch") {
+          throw new Error("config.patch should not be called");
+        }
+        throw new Error("unexpected method");
+      }),
+    } as unknown as GatewayClient;
+
+    const result = await deleteGatewayAgent({
+      client,
+      agentId: "agent-2",
+    });
+
+    expect(result).toEqual({ removed: false, removedBindings: 0 });
+    expect(client.call).toHaveBeenCalledTimes(1);
+    expect((client.call as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBe("config.get");
+  });
+
   it("fails fast on empty create name", async () => {
     const client = {
       call: vi.fn(),
@@ -81,6 +113,53 @@ describe("gateway config patch helpers", () => {
       "Agent name is required."
     );
     expect(client.call).not.toHaveBeenCalled();
+  });
+
+  it("returns current settings when no heartbeat override exists to remove", async () => {
+    const client = {
+      call: vi.fn(async (method: string) => {
+        if (method === "config.get") {
+          return {
+            exists: true,
+            hash: "hash-remove-1",
+            config: {
+              agents: {
+                defaults: {
+                  heartbeat: {
+                    every: "10m",
+                    target: "last",
+                    includeReasoning: false,
+                    ackMaxChars: 300,
+                  },
+                },
+                list: [{ id: "agent-1", name: "Agent One" }],
+              },
+            },
+          };
+        }
+        if (method === "config.patch") {
+          throw new Error("config.patch should not be called");
+        }
+        throw new Error("unexpected method");
+      }),
+    } as unknown as GatewayClient;
+
+    const result = await removeGatewayHeartbeatOverride({
+      client,
+      agentId: "agent-1",
+    });
+
+    expect(result).toEqual({
+      heartbeat: {
+        every: "10m",
+        target: "last",
+        includeReasoning: false,
+        ackMaxChars: 300,
+        activeHours: null,
+      },
+      hasOverride: false,
+    });
+    expect(client.call).toHaveBeenCalledTimes(1);
   });
 
   it("renames an agent in the config patch", async () => {
