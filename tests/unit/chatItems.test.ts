@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentChatItems } from "@/features/agents/components/chatItems";
+import { buildAgentChatItems, buildFinalAgentChatItems } from "@/features/agents/components/chatItems";
 import { formatThinkingMarkdown } from "@/lib/text/message-extract";
 
 describe("buildAgentChatItems", () => {
@@ -75,5 +75,17 @@ describe("buildAgentChatItems", () => {
       kind: "thinking",
       text: "_first plan_\n\n_second plan_",
     });
+  });
+});
+
+describe("buildFinalAgentChatItems", () => {
+  it("does not include live thinking or live assistant items", () => {
+    const items = buildFinalAgentChatItems({
+      outputLines: ["> question", formatThinkingMarkdown("plan"), "answer"],
+      showThinkingTraces: true,
+      toolCallingEnabled: true,
+    });
+
+    expect(items.map((item) => item.kind)).toEqual(["user", "thinking", "assistant"]);
   });
 });

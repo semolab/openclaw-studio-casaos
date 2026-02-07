@@ -17,7 +17,12 @@ import type { GatewayModelChoice } from "@/lib/gateway/models";
 import { isToolMarkdown, isTraceMarkdown } from "@/lib/text/message-extract";
 import { isNearBottom } from "@/lib/dom/scroll";
 import { AgentAvatar } from "./AgentAvatar";
-import { buildAgentChatItems, summarizeToolLabel, type AgentChatItem } from "./chatItems";
+import {
+  buildFinalAgentChatItems,
+  normalizeAssistantDisplayText,
+  summarizeToolLabel,
+  type AgentChatItem,
+} from "./chatItems";
 import { EmptyStatePanel } from "./EmptyStatePanel";
 
 type AgentChatPanelProps = {
@@ -44,6 +49,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   chatItems,
   autoExpandThinking,
   lastThinkingItemIndex,
+  liveThinkingText,
+  liveAssistantText,
   showTypingIndicator,
   outputLineCount,
   liveAssistantCharCount,
@@ -58,6 +65,8 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
   chatItems: AgentChatItem[];
   autoExpandThinking: boolean;
   lastThinkingItemIndex: number;
+  liveThinkingText: string;
+  liveAssistantText: string;
   showTypingIndicator: boolean;
   outputLineCount: number;
   liveAssistantCharCount: number;
@@ -230,12 +239,38 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
                 return (
                   <div
                     key={`chat-${agentId}-assistant-${index}`}
-                    className={`agent-markdown rounded-md border border-transparent px-0.5 ${item.live ? "opacity-85" : ""}`}
+                    className="agent-markdown rounded-md border border-transparent px-0.5"
                   >
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.text}</ReactMarkdown>
                   </div>
                 );
               })}
+              {liveThinkingText ? (
+                <details
+                  className="rounded-md border border-border/70 bg-muted/55 text-[11px] text-muted-foreground"
+                  open={status === "running" && autoExpandThinking}
+                >
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-2 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.11em] [&::-webkit-details-marker]:hidden">
+                    <AgentAvatar seed={avatarSeed} name={name} avatarUrl={avatarUrl} size={22} />
+                    <span>Thinking</span>
+                    {status === "running" ? (
+                      <span className="typing-dots" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                    ) : null}
+                  </summary>
+                  <div className="px-2 pb-2 text-foreground">
+                    <div className="whitespace-pre-wrap break-words">{liveThinkingText}</div>
+                  </div>
+                </details>
+              ) : null}
+              {liveAssistantText ? (
+                <div className="agent-markdown rounded-md border border-transparent px-0.5 opacity-85">
+                  {liveAssistantText}
+                </div>
+              ) : null}
               {showTypingIndicator ? (
                 <div
                   className="flex items-center gap-2 rounded-md border border-border/70 bg-muted/55 px-2 py-1.5 text-[11px] text-muted-foreground"
@@ -415,24 +450,18 @@ export const AgentChatPanel = ({
 
   const chatItems = useMemo(
     () =>
-      buildAgentChatItems({
+      buildFinalAgentChatItems({
         outputLines: agent.outputLines,
-        streamText: agent.streamText,
-        liveThinkingTrace: agent.thinkingTrace?.trim() ?? "",
         showThinkingTraces: agent.showThinkingTraces,
         toolCallingEnabled: agent.toolCallingEnabled,
       }),
-    [
-      agent.outputLines,
-      agent.streamText,
-      agent.thinkingTrace,
-      agent.showThinkingTraces,
-      agent.toolCallingEnabled,
-    ]
+    [agent.outputLines, agent.showThinkingTraces, agent.toolCallingEnabled]
   );
-  const hasLiveAssistantText = Boolean(agent.streamText?.trim());
-  const hasVisibleLiveThinking =
-    agent.showThinkingTraces && Boolean(agent.thinkingTrace?.trim());
+  const liveAssistantText = agent.streamText ? normalizeAssistantDisplayText(agent.streamText) : "";
+  const liveThinkingText =
+    agent.showThinkingTraces && agent.thinkingTrace ? agent.thinkingTrace.trim() : "";
+  const hasLiveAssistantText = Boolean(liveAssistantText.trim());
+  const hasVisibleLiveThinking = Boolean(liveThinkingText.trim());
   const latestUserOutputIndex = useMemo(() => {
     let latestUserIndex = -1;
     for (let index = agent.outputLines.length - 1; index >= 0; index -= 1) {
@@ -485,7 +514,7 @@ export const AgentChatPanel = ({
   const autoExpandThinking =
     agent.status === "running" &&
     !hasSavedAssistantSinceLatestUser &&
-    lastThinkingItemIndex >= 0;
+    (lastThinkingItemIndex >= 0 || hasVisibleLiveThinking);
   const showTypingIndicator =
     agent.status === "running" &&
     !hasLiveAssistantText &&
@@ -663,6 +692,8 @@ export const AgentChatPanel = ({
           chatItems={chatItems}
           autoExpandThinking={autoExpandThinking}
           lastThinkingItemIndex={lastThinkingItemIndex}
+          liveThinkingText={liveThinkingText}
+          liveAssistantText={liveAssistantText}
           showTypingIndicator={showTypingIndicator}
           outputLineCount={agent.outputLines.length}
           liveAssistantCharCount={agent.streamText?.length ?? 0}

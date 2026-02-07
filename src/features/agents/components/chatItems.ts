@@ -44,6 +44,64 @@ const normalizeThinkingDisplayText = (value: string): string => {
   return normalized;
 };
 
+export const buildFinalAgentChatItems = ({
+  outputLines,
+  showThinkingTraces,
+  toolCallingEnabled,
+}: Pick<
+  BuildAgentChatItemsInput,
+  "outputLines" | "showThinkingTraces" | "toolCallingEnabled"
+>): AgentChatItem[] => {
+  const items: AgentChatItem[] = [];
+  const appendThinking = (text: string) => {
+    const normalized = text.trim();
+    if (!normalized) return;
+    const previous = items[items.length - 1];
+    if (!previous || previous.kind !== "thinking") {
+      items.push({ kind: "thinking", text: normalized });
+      return;
+    }
+    if (previous.text === normalized) {
+      return;
+    }
+    if (normalized.startsWith(previous.text)) {
+      previous.text = normalized;
+      return;
+    }
+    if (previous.text.startsWith(normalized)) {
+      return;
+    }
+    previous.text = `${previous.text}\n\n${normalized}`;
+  };
+
+  for (const line of outputLines) {
+    if (!line) continue;
+    if (isTraceMarkdown(line)) {
+      if (!showThinkingTraces) continue;
+      const text = stripTraceMarkdown(line).trim();
+      if (!text) continue;
+      appendThinking(text);
+      continue;
+    }
+    if (isToolMarkdown(line)) {
+      if (!toolCallingEnabled) continue;
+      items.push({ kind: "tool", text: line });
+      continue;
+    }
+    const trimmed = line.trim();
+    if (trimmed.startsWith(">")) {
+      const text = trimmed.replace(/^>\s?/, "").trim();
+      if (text) items.push({ kind: "user", text });
+      continue;
+    }
+    const normalizedAssistant = normalizeAssistantDisplayText(line);
+    if (!normalizedAssistant) continue;
+    items.push({ kind: "assistant", text: normalizedAssistant });
+  }
+
+  return items;
+};
+
 export const buildAgentChatItems = ({
   outputLines,
   streamText,
