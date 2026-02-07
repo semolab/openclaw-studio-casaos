@@ -333,6 +333,7 @@ const AgentStudioPage = () => {
       : null;
     return selectedInFilter ?? filteredAgents[0] ?? null;
   }, [filteredAgents, selectedAgent]);
+  const focusedAgentId = focusedAgent?.agentId ?? null;
   const settingsAgent = useMemo(() => {
     if (!settingsAgentId) return null;
     return agents.find((entry) => entry.agentId === settingsAgentId) ?? null;
@@ -1547,22 +1548,19 @@ const AgentStudioPage = () => {
 
   useEffect(() => {
     if (status !== "connected") return;
-    const hasRunning = agents.some((agent) => agent.status === "running");
-    if (!hasRunning) return;
-    for (const agent of stateRef.current.agents) {
-      if (agent.status !== "running") continue;
-      void loadAgentHistory(agent.agentId);
-    }
+    if (!focusedAgentId) return;
+    const agent = stateRef.current.agents.find((entry) => entry.agentId === focusedAgentId);
+    if (!agent || agent.status !== "running") return;
+    void loadAgentHistory(focusedAgentId);
     const timer = window.setInterval(() => {
-      for (const agent of stateRef.current.agents) {
-        if (agent.status !== "running") continue;
-        void loadAgentHistory(agent.agentId);
-      }
-    }, 1500);
+      const latest = stateRef.current.agents.find((entry) => entry.agentId === focusedAgentId);
+      if (!latest || latest.status !== "running") return;
+      void loadAgentHistory(focusedAgentId);
+    }, 4500);
     return () => {
       window.clearInterval(timer);
     };
-  }, [agents, loadAgentHistory, status]);
+  }, [focusedAgentId, loadAgentHistory, status]);
 
   const handleSend = useCallback(
     async (agentId: string, sessionKey: string, message: string) => {
