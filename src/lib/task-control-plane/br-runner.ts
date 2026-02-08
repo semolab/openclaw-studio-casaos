@@ -2,41 +2,15 @@ import * as childProcess from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { loadStudioSettings } from "@/lib/studio/settings-store";
+import {
+  extractJsonErrorMessage,
+  parseJsonOutput,
+  resolveGatewaySshTarget,
+} from "@/lib/ssh/gateway-host";
 
 type RunBrJsonOptions = {
   cwd?: string;
   env?: Record<string, string>;
-};
-
-const extractErrorMessage = (value: string): string | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-    const record = parsed as Record<string, unknown>;
-    const direct = record.error;
-    if (typeof direct === "string" && direct.trim()) return direct.trim();
-    if (direct && typeof direct === "object") {
-      const nested = (direct as Record<string, unknown>).message;
-      if (typeof nested === "string" && nested.trim()) return nested.trim();
-    }
-    return null;
-  } catch {
-    return null;
-  }
-};
-
-const parseJsonOutput = (raw: string, command: string[]) => {
-  if (!raw.trim()) {
-    throw new Error(`Command produced empty JSON output: br ${command.join(" ")} --json`);
-  }
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    throw new Error(`Command produced invalid JSON output: br ${command.join(" ")} --json`);
-  }
 };
 
 const runBrJsonLocal = (command: string[], options?: RunBrJsonOptions): unknown => {
@@ -55,12 +29,12 @@ const runBrJsonLocal = (command: string[], options?: RunBrJsonOptions): unknown 
     const stderrText = stderr.trim();
     const stdoutText = stdout.trim();
     const message =
-      extractErrorMessage(stdout) ??
-      extractErrorMessage(stderr) ??
+      extractJsonErrorMessage(stdout) ??
+      extractJsonErrorMessage(stderr) ??
       (stderrText || stdoutText || `Command failed: br ${args.join(" ")}`);
     throw new Error(message);
   }
-  return parseJsonOutput(stdout, command);
+  return parseJsonOutput(stdout, `br ${command.join(" ")} --json`);
 };
 
 const quoteShellArg = (value: string) => "'" + value.replaceAll("'", "'\"'\"'") + "'";
@@ -84,12 +58,12 @@ const runBrJsonViaSsh = (command: string[], options: { sshTarget: string; cwd: s
     const stderrText = stderr.trim();
     const stdoutText = stdout.trim();
     const message =
-      extractErrorMessage(stdout) ??
-      extractErrorMessage(stderr) ??
+      extractJsonErrorMessage(stdout) ??
+      extractJsonErrorMessage(stderr) ??
       (stderrText || stdoutText || `Command failed: ssh ${options.sshTarget} <br>`);
     throw new Error(message);
   }
-  return parseJsonOutput(stdout, command);
+  return parseJsonOutput(stdout, `br ${command.join(" ")} --json`);
 };
 
 const parseScopePath = (value: unknown): string | null => {
@@ -100,8 +74,6 @@ const parseScopePath = (value: unknown): string | null => {
 
 const BEADS_DIR_ENV = "OPENCLAW_TASK_CONTROL_PLANE_BEADS_DIR";
 const GATEWAY_BEADS_DIR_ENV = "OPENCLAW_TASK_CONTROL_PLANE_GATEWAY_BEADS_DIR";
-const SSH_TARGET_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET";
-const SSH_USER_ENV = "OPENCLAW_TASK_CONTROL_PLANE_SSH_USER";
 
 const resolveTaskControlPlaneCwd = (): string | undefined => {
   const configured = process.env[BEADS_DIR_ENV];
@@ -143,37 +115,6 @@ const resolveGatewayBeadsDir = (): string | undefined => {
   return trimmed;
 };
 
-const resolveSshTarget = (): string => {
-  const configuredTarget = process.env[SSH_TARGET_ENV]?.trim() ?? "";
-  const configuredUser = process.env[SSH_USER_ENV]?.trim() ?? "";
-
-  if (configuredTarget) {
-    if (configuredTarget.includes("@")) return configuredTarget;
-    if (configuredUser) return `${configuredUser}@${configuredTarget}`;
-    return configuredTarget;
-  }
-
-  const settings = loadStudioSettings();
-  const gatewayUrl = settings.gateway?.url?.trim() ?? "";
-  if (!gatewayUrl) {
-    throw new Error(
-      `Remote beads configured but gateway URL is missing. Set it in Studio settings or set ${SSH_TARGET_ENV}.`
-    );
-  }
-  let hostname: string;
-  try {
-    hostname = new URL(gatewayUrl).hostname;
-  } catch {
-    throw new Error(`Invalid gateway URL in studio settings: ${gatewayUrl}`);
-  }
-  if (!hostname) {
-    throw new Error(`Invalid gateway URL in studio settings: ${gatewayUrl}`);
-  }
-
-  const user = configuredUser || "ubuntu";
-  return `${user}@${hostname}`;
-};
-
 export const isBeadsWorkspaceError = (message: string) => {
   const lowered = message.toLowerCase();
   return lowered.includes("no beads directory found") || lowered.includes("not initialized");
@@ -185,7 +126,7 @@ export const createTaskControlPlaneBrRunner = (): {
 } => {
   const gatewayBeadsDir = resolveGatewayBeadsDir();
   if (gatewayBeadsDir) {
-    const sshTarget = resolveSshTarget();
+    const sshTarget = resolveGatewaySshTarget();
     const cwd = path.dirname(gatewayBeadsDir);
     return {
       runBrJson: (command) => runBrJsonViaSsh(command, { sshTarget, cwd }),
@@ -198,4 +139,3 @@ export const createTaskControlPlaneBrRunner = (): {
     parseScopePath,
   };
 };
-
