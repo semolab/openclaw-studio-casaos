@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseGatewayFrame } from "@/lib/gateway/frames";
+import { parseGatewayFrame } from "@/lib/gateway/GatewayClient";
 
 describe("gateway frames", () => {
   it("parses event stateVersion objects", () => {

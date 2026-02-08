@@ -1,8 +1,68 @@
-import type { EventFrame } from "./frames";
 import {
   GatewayBrowserClient,
   type GatewayHelloOk,
 } from "./openclaw/GatewayBrowserClient";
+
+export type ReqFrame = {
+  type: "req";
+  id: string;
+  method: string;
+  params: unknown;
+};
+
+export type ResFrame = {
+  type: "res";
+  id: string;
+  ok: boolean;
+  payload?: unknown;
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+    retryable?: boolean;
+    retryAfterMs?: number;
+  };
+};
+
+export type GatewayStateVersion = {
+  presence: number;
+  health: number;
+};
+
+export type EventFrame = {
+  type: "event";
+  event: string;
+  payload?: unknown;
+  seq?: number;
+  stateVersion?: GatewayStateVersion;
+};
+
+export type GatewayFrame = ReqFrame | ResFrame | EventFrame;
+
+export const parseGatewayFrame = (raw: string): GatewayFrame | null => {
+  try {
+    return JSON.parse(raw) as GatewayFrame;
+  } catch {
+    return null;
+  }
+};
+
+export const buildAgentMainSessionKey = (agentId: string, mainKey: string) => {
+  const trimmedAgent = agentId.trim();
+  const trimmedKey = mainKey.trim() || "main";
+  return `agent:${trimmedAgent}:${trimmedKey}`;
+};
+
+export const parseAgentIdFromSessionKey = (sessionKey: string): string | null => {
+  const match = sessionKey.match(/^agent:([^:]+):/);
+  return match ? match[1] : null;
+};
+
+export const isSameSessionKey = (a: string, b: string) => {
+  const left = a.trim();
+  const right = b.trim();
+  return left.length > 0 && left === right;
+};
 
 type StatusHandler = (status: GatewayStatus) => void;
 

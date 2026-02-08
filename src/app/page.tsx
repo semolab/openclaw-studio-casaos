@@ -24,7 +24,6 @@ import {
   formatToolCallMarkdown,
 } from "@/lib/text/message-extract";
 import { useGatewayConnection } from "@/lib/gateway/useGatewayConnection";
-import type { EventFrame } from "@/lib/gateway/frames";
 import { createRafBatcher } from "@/lib/dom";
 import {
   buildGatewayModelChoices,
@@ -77,18 +76,17 @@ import {
   triggerHeartbeatNow,
   type AgentHeartbeatSummary,
 } from "@/lib/gateway/agentConfig";
-import {
-  buildAgentMainSessionKey,
-  parseAgentIdFromSessionKey,
-  isSameSessionKey,
-} from "@/lib/gateway/sessionKeys";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { createStudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import { resolveAgentAvatarSeed, resolveFocusedPreference } from "@/lib/studio/settings";
 import { applySessionSettingMutation } from "@/features/agents/state/sessionSettingsMutations";
 import {
+  buildAgentMainSessionKey,
+  isSameSessionKey,
+  parseAgentIdFromSessionKey,
   isGatewayDisconnectLikeError,
   syncGatewaySessionSettings,
+  type EventFrame,
 } from "@/lib/gateway/GatewayClient";
 import { fetchJson } from "@/lib/http";
 import { bootstrapAgentBrainFilesFromTemplate } from "@/lib/gateway/agentFiles";
