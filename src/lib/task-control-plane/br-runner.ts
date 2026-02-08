@@ -8,6 +8,20 @@ import {
   resolveGatewaySshTarget,
 } from "@/lib/ssh/gateway-host";
 
+export const BEADS_WORKSPACE_NOT_INITIALIZED_ERROR_MESSAGE =
+  "Beads workspace not initialized for this project. Run: br init --prefix <scope>.";
+
+export const coerceBrSingleRecord = (
+  value: unknown,
+  opts: { command: "show" | "update"; id: string }
+): Record<string, unknown> => {
+  const record = Array.isArray(value) ? value[0] : value;
+  if (!record || typeof record !== "object" || Array.isArray(record)) {
+    throw new Error(`Unexpected br ${opts.command} --json output for ${opts.id}.`);
+  }
+  return record as Record<string, unknown>;
+};
+
 type RunBrJsonOptions = {
   cwd?: string;
   env?: Record<string, string>;
