@@ -37,6 +37,19 @@ This is where multi-agent work happens.
 - macOS or Linux; Windows via WSL2
 
 ## Quick start
+### Install (recommended)
+```bash
+npx openclaw-studio
+cd openclaw-studio
+npm run dev
+```
+
+What the installer does:
+- Clones OpenClaw Studio into `./openclaw-studio`
+- Installs dependencies
+- Prints a preflight checklist so it's obvious if you're missing git/npm/OpenClaw config or a reachable gateway
+
+### Install (manual)
 ```bash
 git clone https://github.com/grp06/openclaw-studio.git
 cd openclaw-studio
