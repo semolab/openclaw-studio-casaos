@@ -31,24 +31,46 @@ This is where multi-agent work happens.
 
 ## Requirements
 
-- Node.js (LTS recommended)
-- OpenClaw installed with gateway running
-- git in PATH
+- Node.js 18+ (LTS recommended)
+- OpenClaw Gateway running (Studio connects over WebSocket)
 - macOS or Linux; Windows via WSL2
 
 ## Quick start
 ### Install (recommended)
 ```bash
-npx openclaw-studio
+npx -y openclaw-studio
 cd openclaw-studio
 npm run dev
 ```
 
 What the installer does:
-- Clones OpenClaw Studio into `./openclaw-studio`
+- Downloads OpenClaw Studio into `./openclaw-studio`
 - Installs dependencies
 - Prints a preflight checklist so it's obvious if you're missing npm/OpenClaw config or a reachable gateway
 - Writes Studio connection settings under your OpenClaw state dir (for example `~/.openclaw/openclaw-studio/settings.json`) when possible, so the Gateway URL/token are pre-filled
+
+### Start the gateway (required)
+
+If you don't already have OpenClaw installed:
+```bash
+npm install -g openclaw@latest
+openclaw onboard --install-daemon
+```
+
+Start a local gateway (foreground):
+```bash
+openclaw gateway run --bind loopback --port 18789 --verbose
+```
+
+Helpful checks:
+```bash
+openclaw gateway probe
+openclaw config get gateway.auth.token
+```
+
+Remote gateway notes:
+- If your gateway runs on another machine (EC2/Tailscale), set the WebSocket URL + token in Studio Settings, or run the installer with `--gateway-url` / `--gateway-token`.
+- You can also sanity-check remote reachability with: `openclaw gateway probe --url wss://your-host:18789 --token <token>`.
 
 ### Install (manual)
 ```bash
@@ -131,7 +153,7 @@ Run both OpenClaw Studio and OpenClaw inside the same WSL2 distro. Use the WSL s
 
 - **Missing config**: Run `openclaw onboard` or set `OPENCLAW_CONFIG_PATH`
 - **Gateway unreachable**: Confirm the gateway is running and `NEXT_PUBLIC_GATEWAY_URL` matches
-- **Auth errors**: Check `gateway.auth.token` in `openclaw.json`
+- **Auth errors**: Studio currently prompts for a token. Check `gateway.auth.mode` is `token` and `gateway.auth.token` is set in `openclaw.json` (or run `openclaw config get gateway.auth.token`).
 - **Brain files fail to load**: Confirm Studio is connected, and your gateway supports `agents.files.get` / `agents.files.set` (update OpenClaw if those methods are missing).
 - **Remote delete fails**: Studio deletes agents by moving their workspace/state into `~/.openclaw/trash` on the gateway host over SSH (must be able to `ssh` non-interactively). Use `OPENCLAW_TASK_CONTROL_PLANE_SSH_TARGET` if Studio can't derive the host from the gateway URL.
 
