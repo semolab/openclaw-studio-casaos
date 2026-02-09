@@ -47,7 +47,8 @@ npm run dev
 What the installer does:
 - Clones OpenClaw Studio into `./openclaw-studio`
 - Installs dependencies
-- Prints a preflight checklist so it's obvious if you're missing git/npm/OpenClaw config or a reachable gateway
+- Prints a preflight checklist so it's obvious if you're missing npm/OpenClaw config or a reachable gateway
+- Writes Studio connection settings under your OpenClaw state dir (for example `~/.openclaw/openclaw-studio/settings.json`) when possible, so the Gateway URL/token are pre-filled
 
 ### Install (manual)
 ```bash
