@@ -435,7 +435,7 @@ export const AgentChatPanel = ({
         pendingResizeFrameRef.current = null;
       }
     };
-  }, [resizeDraft, agent.draft]);
+  }, [resizeDraft, draftValue]);
 
   const handleSend = useCallback(
     (message: string) => {
@@ -564,15 +564,8 @@ export const AgentChatPanel = ({
       plainDraftRef.current = value;
       setDraftValue(value);
       onDraftChange(value);
-      if (pendingResizeFrameRef.current !== null) {
-        cancelAnimationFrame(pendingResizeFrameRef.current);
-      }
-      pendingResizeFrameRef.current = requestAnimationFrame(() => {
-        pendingResizeFrameRef.current = null;
-        resizeDraft();
-      });
     },
-    [onDraftChange, resizeDraft]
+    [onDraftChange]
   );
 
   const handleComposerKeyDown = useCallback(
