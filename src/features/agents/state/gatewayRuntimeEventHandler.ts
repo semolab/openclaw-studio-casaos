@@ -266,6 +266,10 @@ export function createGatewayRuntimeEventHandler(
     }
 
     if (payload.state === "final") {
+      if (payload.runId && agent?.runId && agent.runId !== payload.runId) {
+        clearRunTracking(payload.runId);
+        return;
+      }
       clearRunTracking(payload.runId ?? null);
       if (!nextThinking && role === "assistant" && !thinkingDebugBySession.has(payload.sessionKey)) {
         thinkingDebugBySession.add(payload.sessionKey);
@@ -331,47 +335,78 @@ export function createGatewayRuntimeEventHandler(
       if (agent?.lastUserMessage && !agent.latestOverride) {
         void deps.updateSpecialLatestUpdate(agentId, agent, agent.lastUserMessage);
       }
+      const terminalPatch: Partial<AgentState> = {
+        streamText: null,
+        thinkingTrace: null,
+        runStartedAt: null,
+        ...(typeof assistantCompletionAt === "number"
+          ? { lastAssistantMessageAt: assistantCompletionAt }
+          : {}),
+      };
+      if (payload.runId && agent?.runId === payload.runId) {
+        terminalPatch.status = "idle";
+        terminalPatch.runId = null;
+      }
       deps.dispatch({
         type: "updateAgent",
         agentId,
-        patch: {
-          streamText: null,
-          thinkingTrace: null,
-          runStartedAt: null,
-          ...(typeof assistantCompletionAt === "number"
-            ? { lastAssistantMessageAt: assistantCompletionAt }
-            : {}),
-        },
+        patch: terminalPatch,
       });
       return;
     }
 
     if (payload.state === "aborted") {
+      if (payload.runId && agent?.runId && agent.runId !== payload.runId) {
+        clearRunTracking(payload.runId);
+        return;
+      }
       clearRunTracking(payload.runId ?? null);
       deps.dispatch({
         type: "appendOutput",
         agentId,
         line: "Run aborted.",
       });
+      const patch: Partial<AgentState> = {
+        streamText: null,
+        thinkingTrace: null,
+        runStartedAt: null,
+      };
+      if (payload.runId && agent?.runId === payload.runId) {
+        patch.status = "idle";
+        patch.runId = null;
+      }
       deps.dispatch({
         type: "updateAgent",
         agentId,
-        patch: { streamText: null, thinkingTrace: null, runStartedAt: null },
+        patch,
       });
       return;
     }
 
     if (payload.state === "error") {
+      if (payload.runId && agent?.runId && agent.runId !== payload.runId) {
+        clearRunTracking(payload.runId);
+        return;
+      }
       clearRunTracking(payload.runId ?? null);
       deps.dispatch({
         type: "appendOutput",
         agentId,
         line: payload.errorMessage ? `Error: ${payload.errorMessage}` : "Run error.",
       });
+      const patch: Partial<AgentState> = {
+        streamText: null,
+        thinkingTrace: null,
+        runStartedAt: null,
+      };
+      if (payload.runId && agent?.runId === payload.runId) {
+        patch.status = "error";
+        patch.runId = null;
+      }
       deps.dispatch({
         type: "updateAgent",
         agentId,
-        patch: { streamText: null, thinkingTrace: null, runStartedAt: null },
+        patch,
       });
     }
   };

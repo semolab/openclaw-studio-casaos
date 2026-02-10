@@ -124,6 +124,9 @@ describe("gateway runtime event handler (chat)", () => {
       createAgent({
         lastUserMessage: "hello",
         latestOverride: null,
+        status: "running",
+        runId: "run-1",
+        runStartedAt: 900,
       }),
     ];
     const dispatched: Array<{ type: string; agentId: string; line?: string; patch?: unknown }> = [];
@@ -175,6 +178,13 @@ describe("gateway runtime event handler (chat)", () => {
       dispatched.some((entry) => {
         if (entry.type !== "updateAgent") return false;
         const patch = entry.patch as Record<string, unknown>;
+        return patch.status === "idle" && patch.runId === null;
+      })
+    ).toBe(true);
+    expect(
+      dispatched.some((entry) => {
+        if (entry.type !== "updateAgent") return false;
+        const patch = entry.patch as Record<string, unknown>;
         return patch.lastAssistantMessageAt === Date.parse(ts);
       })
     ).toBe(true);
@@ -218,8 +228,60 @@ describe("gateway runtime event handler (chat)", () => {
     expect(loadAgentHistory).toHaveBeenCalledWith("agent-1");
   });
 
+  it("ignores terminal chat events for non-active runIds", () => {
+    const agents = [
+      createAgent({
+        status: "running",
+        runId: "run-2",
+        runStartedAt: 900,
+        streamText: "still streaming",
+        thinkingTrace: "t",
+      }),
+    ];
+    const dispatched: Array<{ type: string; agentId: string; patch?: unknown }> = [];
+    const dispatch = vi.fn((action) => {
+      if (action && typeof action === "object") {
+        dispatched.push(action as never);
+      }
+    });
+    const handler = createGatewayRuntimeEventHandler({
+      getStatus: () => "connected",
+      getAgents: () => agents,
+      dispatch,
+      queueLivePatch: vi.fn(),
+      now: () => 1000,
+      loadSummarySnapshot: vi.fn(async () => {}),
+      loadAgentHistory: vi.fn(async () => {}),
+      refreshHeartbeatLatestUpdate: vi.fn(),
+      bumpHeartbeatTick: vi.fn(),
+      setTimeout: (fn, ms) => setTimeout(fn, ms) as unknown as number,
+      clearTimeout: (id) => clearTimeout(id as unknown as NodeJS.Timeout),
+      isDisconnectLikeError: () => false,
+      logWarn: vi.fn(),
+      updateSpecialLatestUpdate: vi.fn(),
+    });
+
+    handler.handleEvent({
+      type: "event",
+      event: "chat",
+      payload: {
+        runId: "run-1",
+        sessionKey: agents[0]!.sessionKey,
+        state: "final",
+        message: { role: "assistant", content: "old done" },
+      },
+    });
+
+    const terminalClears = dispatched.filter((entry) => {
+      if (entry.type !== "updateAgent") return false;
+      const patch = entry.patch as Record<string, unknown>;
+      return patch.streamText === null || patch.thinkingTrace === null || patch.runStartedAt === null;
+    });
+    expect(terminalClears.length).toBe(0);
+  });
+
   it("handles aborted/error by appending output and clearing stream fields", () => {
-    const agents = [createAgent()];
+    const agents = [createAgent({ status: "running", runId: "run-1", runStartedAt: 900 })];
     const dispatch = vi.fn();
     const handler = createGatewayRuntimeEventHandler({
       getStatus: () => "connected",
@@ -252,12 +314,19 @@ describe("gateway runtime event handler (chat)", () => {
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "appendOutput", agentId: "agent-1", line: "Run aborted." })
     );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "updateAgent",
+        agentId: "agent-1",
+        patch: expect.objectContaining({ status: "idle" }),
+      })
+    );
 
     handler.handleEvent({
       type: "event",
       event: "chat",
       payload: {
-        runId: "run-2",
+        runId: "run-1",
         sessionKey: agents[0]!.sessionKey,
         state: "error",
         errorMessage: "bad",
@@ -267,6 +336,13 @@ describe("gateway runtime event handler (chat)", () => {
 
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ type: "appendOutput", agentId: "agent-1", line: "Error: bad" })
+    );
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "updateAgent",
+        agentId: "agent-1",
+        patch: expect.objectContaining({ status: "error" }),
+      })
     );
   });
 });

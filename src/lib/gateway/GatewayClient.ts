@@ -75,6 +75,10 @@ type StatusHandler = (status: GatewayStatus) => void;
 
 type EventHandler = (event: EventFrame) => void;
 
+export type GatewayGapInfo = { expected: number; received: number };
+
+type GapHandler = (info: GatewayGapInfo) => void;
+
 export type GatewayStatus = "disconnected" | "connecting" | "connected";
 
 export type GatewayConnectOptions = {
@@ -110,6 +114,7 @@ export class GatewayClient {
   private client: GatewayBrowserClient | null = null;
   private statusHandlers = new Set<StatusHandler>();
   private eventHandlers = new Set<EventHandler>();
+  private gapHandlers = new Set<GapHandler>();
   private status: GatewayStatus = "disconnected";
   private pendingConnect: Promise<void> | null = null;
   private resolveConnect: (() => void) | null = null;
@@ -129,6 +134,13 @@ export class GatewayClient {
     this.eventHandlers.add(handler);
     return () => {
       this.eventHandlers.delete(handler);
+    };
+  }
+
+  onGap(handler: GapHandler) {
+    this.gapHandlers.add(handler);
+    return () => {
+      this.gapHandlers.delete(handler);
     };
   }
 
@@ -172,7 +184,7 @@ export class GatewayClient {
         }
       },
       onGap: ({ expected, received }) => {
-        console.warn(`Gateway event gap expected ${expected}, received ${received}.`);
+        this.gapHandlers.forEach((handler) => handler({ expected, received }));
       },
     });
 

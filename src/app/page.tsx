@@ -228,6 +228,7 @@ const AgentStudioPage = () => {
   const runtimeEventHandlerRef = useRef<ReturnType<typeof createGatewayRuntimeEventHandler> | null>(
     null
   );
+  const reconcileRunInFlightRef = useRef<Set<string>>(new Set());
 
   const agents = state.agents;
   const selectedAgent = useMemo(() => getSelectedAgent(state), [state]);
@@ -875,6 +876,69 @@ const AgentStudioPage = () => {
     [client, dispatch]
   );
 
+  const reconcileRunningAgents = useCallback(async () => {
+    if (status !== "connected") return;
+    const snapshot = stateRef.current.agents;
+    for (const agent of snapshot) {
+      if (agent.status !== "running") continue;
+      if (!agent.sessionCreated) continue;
+      const runId = agent.runId?.trim() ?? "";
+      if (!runId) continue;
+      if (reconcileRunInFlightRef.current.has(runId)) continue;
+
+      reconcileRunInFlightRef.current.add(runId);
+      try {
+        const result = (await client.call("agent.wait", {
+          runId,
+          timeoutMs: 1,
+        })) as { status?: unknown };
+        const resolved = typeof result?.status === "string" ? result.status : "";
+        if (resolved !== "ok" && resolved !== "error") {
+          continue;
+        }
+
+        const latest = stateRef.current.agents.find((entry) => entry.agentId === agent.agentId);
+        if (!latest || latest.runId !== runId || latest.status !== "running") {
+          continue;
+        }
+
+        runtimeEventHandlerRef.current?.clearRunTracking(runId);
+        dispatch({
+          type: "updateAgent",
+          agentId: agent.agentId,
+          patch: {
+            status: resolved === "error" ? "error" : "idle",
+            runId: null,
+            runStartedAt: null,
+            streamText: null,
+            thinkingTrace: null,
+          },
+        });
+        console.info(
+          `[agent-reconcile] ${agent.agentId} run ${runId} resolved as ${resolved}.`
+        );
+        void loadAgentHistory(agent.agentId);
+      } catch (err) {
+        if (!isGatewayDisconnectLikeError(err)) {
+          console.warn("Failed to reconcile running agent.", err);
+        }
+      } finally {
+        reconcileRunInFlightRef.current.delete(runId);
+      }
+    }
+  }, [client, dispatch, loadAgentHistory, status]);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    void reconcileRunningAgents();
+    const timer = window.setInterval(() => {
+      void reconcileRunningAgents();
+    }, 3000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [reconcileRunningAgents, status]);
+
   useEffect(() => {
     if (status !== "connected") return;
     for (const agent of agents) {
@@ -1412,6 +1476,14 @@ const AgentStudioPage = () => {
     status,
     updateSpecialLatestUpdate,
   ]);
+
+  useEffect(() => {
+    return client.onGap((info) => {
+      console.warn(`Gateway event gap expected ${info.expected}, received ${info.received}.`);
+      void loadSummarySnapshot();
+      void reconcileRunningAgents();
+    });
+  }, [client, loadSummarySnapshot, reconcileRunningAgents]);
 
   const handleRenameAgent = useCallback(
     async (agentId: string, name: string) => {
