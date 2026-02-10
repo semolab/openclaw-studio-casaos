@@ -4,31 +4,15 @@
 
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/VEpdKJ9e)
 
-Mission control for AI agents that actually do work.
-
-OpenClaw Studio is the coordination layer that turns LLMs from "sometimes helpful" into compounding leverage. Orchestrate many scoped agents shipping PRs, running refactors, reviewing code, and doing research while you stay the intentional bottleneck. No chat wrappers. No autonomous black boxes. Just structured coordination of real side effects, with guardrails you'd bet your reputation on.
-
-One strong human + many scoped agents + explicit coordination primitives. That's the thesis. Studio is how you prove it.
+OpenClaw Studio is a Next.js dashboard for managing OpenClaw agents via the OpenClaw Gateway (WebSocket).
 
 ## Requirements
 
 - Node.js 18+ (LTS recommended)
 - OpenClaw Gateway running (local or remote)
-- macOS or Linux; Windows via WSL2
+- Tailscale (optional, recommended for tailnet access)
 
 ## Quick start
-### Install Studio (recommended)
-```bash
-npx -y openclaw-studio
-cd openclaw-studio
-npm run dev
-```
-
-What the installer does:
-- Downloads OpenClaw Studio into `./openclaw-studio`
-- Installs dependencies
-- Prints a preflight checklist so it's obvious if you're missing npm/OpenClaw config or a reachable gateway
-- Writes Studio connection settings under your OpenClaw state dir (for example `~/.openclaw/openclaw-studio/settings.json`) when possible, so the Gateway URL/token are pre-filled
 
 ### Start the gateway (required)
 
@@ -38,7 +22,7 @@ npm install -g openclaw@latest
 openclaw onboard --install-daemon
 ```
 
-Start a local gateway (foreground):
+Start a gateway (foreground):
 ```bash
 openclaw gateway run --bind loopback --port 18789 --verbose
 ```
@@ -49,22 +33,43 @@ openclaw gateway probe
 openclaw config get gateway.auth.token
 ```
 
-### Local vs remote
+### Tailnet access via Tailscale Serve (recommended)
 
-Local gateway (same machine):
-- Gateway URL: `ws://127.0.0.1:18789`
+Most people keep the gateway bound to loopback and use Tailscale Serve on the gateway host.
+
+On the gateway host:
+```bash
+openclaw config set gateway.tailscale.mode serve
+openclaw config set gateway.auth.mode token
+```
+
+Restart your gateway. Then:
+```bash
+tailscale serve status
+```
+
+Take the HTTPS URL from `tailscale serve status` and convert it to a WebSocket URL for Studio:
+- `https://gateway-host.your-tailnet.ts.net` -> `wss://gateway-host.your-tailnet.ts.net`
+
+### Install + run Studio (recommended)
+```bash
+npx -y openclaw-studio
+cd openclaw-studio
+npm run dev
+```
+
+Open http://localhost:3000 and set:
 - Token: `openclaw config get gateway.auth.token`
+- Gateway URL: `wss://gateway-host.your-tailnet.ts.net` (tailnet via `tailscale serve`)
+- Gateway URL: `ws://127.0.0.1:18789` (local gateway)
+- Gateway URL: `ws://your-host:18789` (direct remote port, no `tailscale serve`)
 
-Remote gateway (EC2/Tailscale/etc.):
-- Set the gateway URL + token in Studio Settings, or install with:
-```bash
-npx -y openclaw-studio --gateway-url wss://your-host:18789 --gateway-token <token>
-```
-- Sanity-check reachability:
-```bash
-openclaw gateway probe --url wss://your-host:18789 --token <token>
-```
-- If you prefer SSH tunneling:
+Notes:
+- If Studio is served over `https://`, the gateway URL must be `wss://...` (browsers block `ws://` from `https://` pages).
+
+### SSH tunneling (alternative)
+
+If you prefer SSH tunneling to a remote host:
 ```bash
 ssh -L 18789:127.0.0.1:18789 user@your-host
 ```
@@ -78,8 +83,6 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000
-
 ## Configuration
 
 Paths and key settings:
@@ -92,7 +95,6 @@ Paths and key settings:
 - **Missing config**: Run `openclaw onboard` or set `OPENCLAW_CONFIG_PATH`
 - **Gateway unreachable**: Confirm the gateway is running and `NEXT_PUBLIC_GATEWAY_URL` matches
 - **Auth errors**: Studio currently prompts for a token. Check `gateway.auth.mode` is `token` and `gateway.auth.token` is set in `openclaw.json` (or run `openclaw config get gateway.auth.token`).
-- **Brain files fail to load**: Confirm Studio is connected, and your gateway supports `agents.files.get` / `agents.files.set`.
 - **Still stuck**: Run `npx -y openclaw-studio@latest doctor --check` (and `--fix --force-settings` to safely rewrite Studio settings).
 
 ## Architecture
