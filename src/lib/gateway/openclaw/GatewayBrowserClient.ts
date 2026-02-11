@@ -357,6 +357,7 @@ export type GatewayBrowserClientOptions = {
   token?: string;
   password?: string;
   authScopeKey?: string;
+  disableDeviceAuth?: boolean;
   clientName?: string;
   clientVersion?: string;
   platform?: string;
@@ -435,7 +436,8 @@ export class GatewayBrowserClient {
       this.connectTimer = null;
     }
 
-    const isSecureContext = typeof crypto !== "undefined" && !!crypto.subtle;
+    const isSecureContext =
+      !this.opts.disableDeviceAuth && typeof crypto !== "undefined" && !!crypto.subtle;
 
     const scopes = ["operator.admin", "operator.approvals", "operator.pairing"];
     const role = "operator";
@@ -527,11 +529,15 @@ export class GatewayBrowserClient {
         this.backoffMs = 800;
         this.opts.onHello?.(hello);
       })
-      .catch(() => {
+      .catch((err) => {
         if (canFallbackToShared && deviceIdentity) {
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role, scope: authScopeKey });
         }
-        this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
+        const reason =
+          err instanceof GatewayResponseError
+            ? `connect failed: ${err.code} ${err.message}`
+            : "connect failed";
+        this.ws?.close(CONNECT_FAILED_CLOSE_CODE, reason);
       });
   }
 

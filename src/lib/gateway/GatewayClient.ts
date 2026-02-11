@@ -88,6 +88,8 @@ export type GatewayConnectOptions = {
   gatewayUrl: string;
   token?: string;
   authScopeKey?: string;
+  clientName?: string;
+  disableDeviceAuth?: boolean;
 };
 
 export { GatewayResponseError } from "@/lib/gateway/errors";
@@ -147,6 +149,8 @@ export class GatewayClient {
       url: options.gatewayUrl,
       token: options.token,
       authScopeKey: options.authScopeKey,
+      clientName: options.clientName,
+      disableDeviceAuth: options.disableDeviceAuth,
       onHello: (hello) => {
         this.lastHello = hello;
         this.updateStatus("connected");
@@ -396,6 +400,8 @@ export const useGatewayConnection = (
         gatewayUrl: resolveStudioProxyGatewayUrl(),
         token,
         authScopeKey: gatewayUrl,
+        clientName: "openclaw-studio",
+        disableDeviceAuth: true,
       });
       await ensureGatewayReloadModeHotForLocalStudio({
         client,
