@@ -180,6 +180,35 @@ describe("AgentChatPanel controls", () => {
     expect(onStopRun).toHaveBeenCalledTimes(1);
   });
 
+  it("disables_stop_button_with_tooltip_when_stop_is_unavailable", () => {
+    const stopDisabledReason =
+      "This task is running as an automatic heartbeat check. Stopping heartbeat runs from Studio isn't available yet (coming soon).";
+    render(
+      createElement(AgentChatPanel, {
+        agent: { ...createAgent(), status: "running" },
+        isSelected: true,
+        canSend: true,
+        models,
+        stopBusy: false,
+        stopDisabledReason,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+      })
+    );
+
+    const stopButton = screen.getByRole("button", {
+      name: `Stop unavailable: ${stopDisabledReason}`,
+    });
+    expect(stopButton).toBeDisabled();
+    expect(stopButton.parentElement).toHaveAttribute("title", stopDisabledReason);
+  });
+
   it("shows_typing_indicator_while_running_before_stream_text", () => {
     render(
       createElement(AgentChatPanel, {

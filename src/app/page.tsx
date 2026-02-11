@@ -260,6 +260,13 @@ const AgentStudioPage = () => {
   }, [filteredAgents, selectedAgent]);
   const focusedAgentId = focusedAgent?.agentId ?? null;
   const focusedAgentRunning = focusedAgent?.status === "running";
+  const focusedAgentStopDisabledReason = useMemo(() => {
+    if (!focusedAgent) return null;
+    if (focusedAgent.status !== "running") return null;
+    const lastMessage = focusedAgent.lastUserMessage?.trim() ?? "";
+    if (!lastMessage || !isHeartbeatPrompt(lastMessage)) return null;
+    return "This task is running as an automatic heartbeat check. Stopping heartbeat runs from Studio isn't available yet (coming soon).";
+  }, [focusedAgent]);
   const settingsAgent = useMemo(() => {
     if (!settingsAgentId) return null;
     return agents.find((entry) => entry.agentId === settingsAgentId) ?? null;
@@ -1957,6 +1964,7 @@ const AgentStudioPage = () => {
 	                canSend={status === "connected"}
 	                models={gatewayModels}
 	                stopBusy={stopBusyAgentId === focusedAgent.agentId}
+	                stopDisabledReason={focusedAgentStopDisabledReason}
 	                onLoadMoreHistory={() => loadMoreAgentHistory(focusedAgent.agentId)}
 	                onOpenSettings={() => handleOpenAgentSettings(focusedAgent.agentId)}
 	                onModelChange={(value) =>

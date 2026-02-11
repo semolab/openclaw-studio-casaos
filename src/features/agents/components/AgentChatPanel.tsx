@@ -107,6 +107,7 @@ type AgentChatPanelProps = {
   canSend: boolean;
   models: GatewayModelChoice[];
   stopBusy: boolean;
+  stopDisabledReason?: string | null;
   onLoadMoreHistory: () => void;
   onOpenSettings: () => void;
   onModelChange: (value: string | null) => void;
@@ -669,6 +670,7 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onStop,
   canSend,
   stopBusy,
+  stopDisabledReason,
   running,
   sendDisabled,
   inputRef,
@@ -680,10 +682,14 @@ const AgentChatComposer = memo(function AgentChatComposer({
   onStop: () => void;
   canSend: boolean;
   stopBusy: boolean;
+  stopDisabledReason?: string | null;
   running: boolean;
   sendDisabled: boolean;
   inputRef: (el: HTMLTextAreaElement | HTMLInputElement | null) => void;
 }) {
+  const stopReason = stopDisabledReason?.trim() ?? "";
+  const stopDisabled = !canSend || stopBusy || Boolean(stopReason);
+  const stopAriaLabel = stopReason ? `Stop unavailable: ${stopReason}` : "Stop";
   return (
     <div className="flex items-end gap-2">
       <textarea
@@ -696,14 +702,17 @@ const AgentChatComposer = memo(function AgentChatComposer({
         placeholder="type a message"
       />
       {running ? (
-        <button
-          className="rounded-[8px] border border-border/70 bg-surface-3 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
-          type="button"
-          onClick={onStop}
-          disabled={!canSend || stopBusy}
-        >
-          {stopBusy ? "Stopping" : "Stop"}
-        </button>
+        <span className="inline-flex" title={stopReason || undefined}>
+          <button
+            className="rounded-[8px] border border-border/70 bg-surface-3 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-foreground transition hover:bg-surface-2 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground"
+            type="button"
+            onClick={onStop}
+            disabled={stopDisabled}
+            aria-label={stopAriaLabel}
+          >
+            {stopBusy ? "Stopping" : "Stop"}
+          </button>
+        </span>
       ) : null}
       <button
         className="rounded-[8px] border border-transparent bg-primary px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:border-border disabled:bg-muted disabled:text-muted-foreground"
@@ -723,6 +732,7 @@ export const AgentChatPanel = ({
   canSend,
   models,
   stopBusy,
+  stopDisabledReason = null,
   onLoadMoreHistory,
   onOpenSettings,
   onModelChange,
@@ -1028,6 +1038,7 @@ export const AgentChatPanel = ({
             onStop={onStopRun}
             canSend={canSend}
             stopBusy={stopBusy}
+            stopDisabledReason={stopDisabledReason}
             running={running}
             sendDisabled={sendDisabled}
           />
