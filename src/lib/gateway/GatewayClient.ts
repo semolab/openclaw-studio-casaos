@@ -7,6 +7,7 @@ import {
 } from "./openclaw/GatewayBrowserClient";
 import type { StudioSettings, StudioSettingsPatch } from "@/lib/studio/settings";
 import { resolveStudioProxyGatewayUrl } from "@/lib/gateway/proxy-url";
+import { ensureGatewayReloadModeHotForLocalStudio } from "@/lib/gateway/gatewayReloadMode";
 
 export type ReqFrame = {
   type: "req";
@@ -413,10 +414,14 @@ export const useGatewayConnection = (
         gatewayUrl: resolveStudioProxyGatewayUrl(),
         token,
       });
+      await ensureGatewayReloadModeHotForLocalStudio({
+        client,
+        upstreamGatewayUrl: gatewayUrl,
+      });
     } catch (err) {
       setError(formatGatewayError(err));
     }
-  }, [client, settingsCoordinator, token]);
+  }, [client, gatewayUrl, settingsCoordinator, token]);
 
   useEffect(() => {
     if (didAutoConnect.current) return;
