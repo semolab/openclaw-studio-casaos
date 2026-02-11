@@ -118,6 +118,7 @@ Paths and key settings:
 - **Missing config**: Run `openclaw onboard` or set `OPENCLAW_CONFIG_PATH`
 - **Gateway unreachable**: Confirm the gateway is running and `NEXT_PUBLIC_GATEWAY_URL` matches
 - **Auth errors**: Studio currently prompts for a token. Check `gateway.auth.mode` is `token` and `gateway.auth.token` is set in `openclaw.json` (or run `openclaw config get gateway.auth.token`).
+- **Secure-context connect errors** (for example `INVALID_REQUEST ... control ui requires HTTPS or localhost (secure context)`): use `ws://localhost:18789` for local gateways instead of `ws://127.0.0.1:18789`, or use `wss://...` when connecting over HTTPS.
 - **UI loads but no agents show up** (common when browsing from a phone):
   - Check the Gateway URL shown in Studio. If it is `ws://localhost:18789`, that will only work when browsing Studio on the same machine running the gateway (or via an SSH tunnel).
   - If you set a Gateway URL once, it is persisted in `~/.openclaw/openclaw-studio/settings.json`. Update it in the UI (or delete/reset the file) if you moved hosts.

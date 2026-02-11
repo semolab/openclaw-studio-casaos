@@ -66,7 +66,7 @@ Flow:
 - **Server-side boundary**: custom server proxy (`server/gateway-proxy.js`) is in the middle for upstream URL/token resolution and connect-frame token injection.
 
 Flow:
-1. UI loads gateway URL/token from `/api/studio` (defaulting to `NEXT_PUBLIC_GATEWAY_URL` if unset).
+1. UI loads gateway URL/token from `/api/studio` (defaulting to `NEXT_PUBLIC_GATEWAY_URL`, or `ws://localhost:18789` when that env var is unset).
 2. Browser opens WS to Studio `/api/gateway/ws` (`ws://` on `http`, `wss://` on `https`).
 3. Proxy loads upstream URL/token from Studio settings on the server and opens upstream WS.
 4. Proxy forwards `connect` and subsequent frames; it injects auth token server-side if the connect frame has none.
@@ -98,7 +98,7 @@ Flow:
 - **Read-model boundary**: `src/lib/task-control-plane/read-model.ts` converts raw Beads lists into the UI snapshot shape.
 
 ## Cross-cutting concerns
-- **Configuration**: environment variables are read directly from `process.env` (for example `NEXT_PUBLIC_GATEWAY_URL` for client defaults and `STUDIO_UPSTREAM_GATEWAY_URL`/`STUDIO_UPSTREAM_GATEWAY_TOKEN` for server overrides). `lib/clawdbot/paths.ts` resolves config path/state dirs, honoring `OPENCLAW_STATE_DIR`/`OPENCLAW_CONFIG_PATH` and legacy fallbacks. Studio settings live under `<state dir>/openclaw-studio/settings.json`. When Studio token is missing, settings loaders can fall back to token/port from `<state dir>/openclaw.json`.
+- **Configuration**: environment variables are read directly from `process.env` (for example `NEXT_PUBLIC_GATEWAY_URL` for client defaults and `STUDIO_UPSTREAM_GATEWAY_URL`/`STUDIO_UPSTREAM_GATEWAY_TOKEN` for server overrides). `lib/clawdbot/paths.ts` resolves config path/state dirs, honoring `OPENCLAW_STATE_DIR`/`OPENCLAW_CONFIG_PATH` and legacy fallbacks. Studio settings live under `<state dir>/openclaw-studio/settings.json`. When Studio token is missing, settings loaders can fall back to token/port from `<state dir>/openclaw.json`. Loopback-IP gateway URLs are normalized to `localhost` in Studio settings, and the WS proxy rewrites loopback upstream origins to `localhost` for control-UI secure-context compatibility.
 - **Logging**: API routes and the gateway client use built-in `console.*` logging.
 - **Error handling**:
   - API routes return JSON `{ error }` with appropriate status.
