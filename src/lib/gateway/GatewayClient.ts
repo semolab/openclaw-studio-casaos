@@ -411,12 +411,12 @@ export const useGatewayConnection = (
       await settingsCoordinator.flushPending();
       await client.connect({
         gatewayUrl: resolveStudioProxyGatewayUrl(),
-        token: "",
+        token,
       });
     } catch (err) {
       setError(formatGatewayError(err));
     }
-  }, [client, settingsCoordinator]);
+  }, [client, settingsCoordinator, token]);
 
   useEffect(() => {
     if (didAutoConnect.current) return;
