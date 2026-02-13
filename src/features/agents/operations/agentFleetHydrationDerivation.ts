@@ -221,13 +221,13 @@ export const deriveHydrateAgentFleetResult = (
     const sandboxMode = resolveAgentSandboxMode(agent.id, input.configSnapshot);
     const resolvedExecSecurity = sessionExecSecurity ?? policy?.security;
     const resolvedExecAsk = sessionExecAsk ?? policy?.ask;
-    const resolvedExecHost =
-      sessionExecHost ??
-      (resolvedExecSecurity || resolvedExecAsk
-        ? sandboxMode === "all"
-          ? "sandbox"
-          : "gateway"
-        : undefined);
+    const shouldForceSandboxExecHost =
+      sandboxMode === "all" &&
+      Boolean(sessionExecHost || resolvedExecSecurity || resolvedExecAsk);
+    const resolvedExecHost = shouldForceSandboxExecHost
+      ? "sandbox"
+      : sessionExecHost ??
+        (resolvedExecSecurity || resolvedExecAsk ? "gateway" : undefined);
     const expectsExecOverrides = Boolean(
       resolvedExecHost || resolvedExecSecurity || resolvedExecAsk
     );

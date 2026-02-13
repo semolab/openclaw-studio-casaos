@@ -549,11 +549,6 @@ export const compileGuidedAgentCreation = (params: {
         profile: params.draft.controls.toolsProfile,
         alsoAllow: normalizedAlsoAllow,
         deny: normalizedDeny,
-        sandbox: {
-          tools: {
-            allow: [],
-          },
-        },
       },
     },
     execApprovals: params.draft.controls.allowExec

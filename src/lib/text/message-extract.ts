@@ -50,6 +50,7 @@ const stripAppendedExecApprovalPolicy = (text: string): string => {
 const ASSISTANT_PREFIX_RE = /^\[reply_to_current\]\s*(?:\|\s*)?/i;
 const stripAssistantPrefix = (text: string): string => {
   if (!text) return text;
+  if (!ASSISTANT_PREFIX_RE.test(text)) return text;
   return text.replace(ASSISTANT_PREFIX_RE, "").trimStart();
 };
 

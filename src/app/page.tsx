@@ -731,6 +731,81 @@ const AgentStudioPage = () => {
     status,
   ]);
 
+  const sandboxToolsRepairAttemptedRef = useRef(false);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    if (sandboxToolsRepairAttemptedRef.current) return;
+    const baseConfig =
+      gatewayConfigSnapshot?.config &&
+      typeof gatewayConfigSnapshot.config === "object" &&
+      !Array.isArray(gatewayConfigSnapshot.config)
+        ? (gatewayConfigSnapshot.config as Record<string, unknown>)
+        : null;
+    if (!baseConfig) return;
+
+    const list = readConfigAgentList(baseConfig);
+    const brokenAgentIds = list
+      .filter((entry) => {
+        const sandboxRaw =
+          entry && typeof (entry as Record<string, unknown>).sandbox === "object"
+            ? ((entry as Record<string, unknown>).sandbox as unknown)
+            : null;
+        const sandbox =
+          sandboxRaw && typeof sandboxRaw === "object" && !Array.isArray(sandboxRaw)
+            ? (sandboxRaw as Record<string, unknown>)
+            : null;
+        const mode = typeof sandbox?.mode === "string" ? sandbox.mode.trim().toLowerCase() : "";
+        if (mode !== "all") return false;
+
+        const toolsRaw =
+          entry && typeof (entry as Record<string, unknown>).tools === "object"
+            ? ((entry as Record<string, unknown>).tools as unknown)
+            : null;
+        const tools =
+          toolsRaw && typeof toolsRaw === "object" && !Array.isArray(toolsRaw)
+            ? (toolsRaw as Record<string, unknown>)
+            : null;
+        const sandboxBlock =
+          tools && typeof tools.sandbox === "object" && !Array.isArray(tools.sandbox)
+            ? (tools.sandbox as Record<string, unknown>)
+            : null;
+        const sandboxTools =
+          sandboxBlock && typeof sandboxBlock.tools === "object" && !Array.isArray(sandboxBlock.tools)
+            ? (sandboxBlock.tools as Record<string, unknown>)
+            : null;
+        const allow = sandboxTools?.allow;
+        return Array.isArray(allow) && allow.length === 0;
+      })
+      .map((entry) => entry.id);
+
+    if (brokenAgentIds.length === 0) return;
+    sandboxToolsRepairAttemptedRef.current = true;
+
+    void enqueueConfigMutation({
+      kind: "repair-sandbox-tool-allowlist",
+      label: "Repair sandbox tool access",
+      run: async () => {
+        for (const agentId of brokenAgentIds) {
+          await updateGatewayAgentOverrides({
+            client,
+            agentId,
+            overrides: {
+              tools: {
+                sandbox: {
+                  tools: {
+                    allow: ["*"],
+                  },
+                },
+              },
+            },
+          });
+        }
+        await loadAgents();
+      },
+    });
+  }, [client, enqueueConfigMutation, gatewayConfigSnapshot, loadAgents, status]);
+
   const applyPendingCreateSetupForAgentId = useCallback(
     async (params: { agentId: string; source: "auto" | "manual" }) => {
       return await applyPendingGuidedSetupRetryViaStudio({

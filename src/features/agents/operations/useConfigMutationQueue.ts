@@ -8,7 +8,8 @@ export type ConfigMutationKind =
   | "create-agent"
   | "rename-agent"
   | "delete-agent"
-  | "update-agent-execution-role";
+  | "update-agent-execution-role"
+  | "repair-sandbox-tool-allowlist";
 
 type QueuedConfigMutation = {
   id: string;
