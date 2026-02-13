@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildAgentChatItems, buildFinalAgentChatItems } from "@/features/agents/components/chatItems";
-import { formatMetaMarkdown, formatThinkingMarkdown } from "@/lib/text/message-extract";
+import { buildAgentChatItems, buildFinalAgentChatItems, summarizeToolLabel } from "@/features/agents/components/chatItems";
+import { formatMetaMarkdown, formatThinkingMarkdown, formatToolCallMarkdown, formatToolResultMarkdown } from "@/lib/text/message-extract";
 
 describe("buildAgentChatItems", () => {
   it("keeps thinking traces aligned with each assistant turn", () => {
@@ -159,5 +159,32 @@ describe("buildFinalAgentChatItems", () => {
         text: "repeat",
       },
     ]);
+  });
+});
+
+describe("summarizeToolLabel", () => {
+  it("hides long tool call ids and prefers showing the command/path/url value", () => {
+    const toolCallLine = formatToolCallMarkdown({
+      id: "call_ABC123|fc_456",
+      name: "functions.exec",
+      arguments: { command: "gh auth status" },
+    });
+
+    const { summaryText: callSummary } = summarizeToolLabel(toolCallLine);
+    expect(callSummary).toContain("gh auth status");
+    expect(callSummary).not.toContain("call_");
+
+    const toolResultLine = formatToolResultMarkdown({
+      toolCallId: "call_ABC123|fc_456",
+      toolName: "functions.exec",
+      details: { status: "completed", exitCode: 0, durationMs: 168 },
+      isError: false,
+      text: "ok",
+    });
+
+    const { summaryText: resultSummary } = summarizeToolLabel(toolResultLine);
+    expect(resultSummary).toContain("completed");
+    expect(resultSummary).toContain("exit 0");
+    expect(resultSummary).not.toContain("call_");
   });
 });

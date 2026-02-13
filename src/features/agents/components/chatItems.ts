@@ -320,11 +320,17 @@ const extractToolMetaLine = (body: string): string | null => {
   return meta;
 };
 
+const extractFirstCodeBlockLine = (body: string): string | null => {
+  const match = body.match(/```[a-zA-Z0-9_-]*\r?\n([^\r\n]+)\r?\n/);
+  const line = (match?.[1] ?? "").trim();
+  return line ? truncateInline(line, 96) : null;
+};
+
 const extractToolArgSummary = (body: string): string | null => {
   const matchers: Array<[RegExp, (m: RegExpMatchArray) => string | null]> = [
-    [/"command"\s*:\s*"([^"]+)"/, (m) => (m[1] ? `command: ${m[1]}` : null)],
-    [/"path"\s*:\s*"([^"]+)"/, (m) => (m[1] ? `path: ${m[1]}` : null)],
-    [/"url"\s*:\s*"([^"]+)"/, (m) => (m[1] ? `url: ${m[1]}` : null)],
+    [/"command"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
+    [/"path"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
+    [/"url"\s*:\s*"([^"]+)"/, (m) => (m[1] ? m[1] : null)],
   ];
   for (const [re, toSummary] of matchers) {
     const m = body.match(re);
@@ -337,14 +343,18 @@ const extractToolArgSummary = (body: string): string | null => {
 export const summarizeToolLabel = (line: string): { summaryText: string; body: string } => {
   const parsed = parseToolMarkdown(line);
   const { toolLabel } = stripTrailingToolCallId(parsed.label);
-  const toolName = toDisplayToolName(toolLabel);
-  const summaryLabel = parsed.kind === "result" ? "Tool result" : "Tool call";
+  const toolName = toDisplayToolName(toolLabel).toUpperCase();
   const metaLine = parsed.kind === "result" ? extractToolMetaLine(parsed.body) : null;
   const argSummary = parsed.kind === "call" ? extractToolArgSummary(parsed.body) : null;
   const suffix = metaLine ?? argSummary;
-  const summaryText = suffix
-    ? `${summaryLabel}: ${toolName} · ${suffix}`
-    : `${summaryLabel}: ${toolName}`;
+  const toolIsExec = toolName === "EXEC";
+  const execSummary =
+    parsed.kind === "call"
+      ? argSummary
+      : metaLine ?? extractFirstCodeBlockLine(parsed.body);
+  const summaryText = toolIsExec
+    ? (execSummary ?? metaLine ?? toolName)
+    : (suffix ? `${toolName} · ${suffix}` : toolName);
   return {
     summaryText,
     body: parsed.body,

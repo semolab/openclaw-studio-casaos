@@ -513,7 +513,7 @@ const AgentChatFinalItems = memo(function AgentChatFinalItems({
               key={`chat-${agentId}-tool-${index}`}
               className={`w-full ${ASSISTANT_MAX_WIDTH_EXPANDED_CLASS} ${ASSISTANT_GUTTER_CLASS} self-start rounded-[8px] border border-border/70 bg-surface-3 px-2 py-1 text-[10px] text-muted-foreground`}
             >
-                <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold uppercase tracking-[0.11em]">
+                <summary className="cursor-pointer select-none font-mono text-[10px] font-semibold tracking-[0.11em]">
                   {summaryText}
                 </summary>
                 {body ? (
