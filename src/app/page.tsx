@@ -76,10 +76,6 @@ import {
   upsertPendingGuidedSetup,
 } from "@/features/agents/creation/recovery";
 import {
-  beginPendingGuidedSetupRetry,
-  endPendingGuidedSetupRetry,
-} from "@/features/agents/creation/pendingSetupRetry";
-import {
   loadPendingGuidedSetupsFromStorage,
   normalizePendingGuidedSetupGatewayScope,
   persistPendingGuidedSetupsToStorage,
@@ -93,9 +89,7 @@ import {
   runGuidedCreateWorkflow,
   runGuidedRetryWorkflow,
 } from "@/features/agents/operations/guidedCreateWorkflow";
-import {
-  runPendingSetupRetryLifecycle,
-} from "@/features/agents/operations/pendingSetupLifecycleWorkflow";
+import { applyPendingGuidedSetupRetryViaStudio } from "@/features/agents/operations/pendingGuidedSetupRetryOperation";
 import {
   isGatewayDisconnectLikeError,
   type EventFrame,
@@ -732,61 +726,38 @@ const AgentStudioPage = () => {
 
   const applyPendingCreateSetupForAgentId = useCallback(
     async (params: { agentId: string; source: "auto" | "manual" }) => {
-      const resolvedAgentId = params.agentId.trim();
-      if (!resolvedAgentId) return false;
-      if (
-        retryPendingSetupBusyAgentId &&
-        retryPendingSetupBusyAgentId !== resolvedAgentId
-      ) {
-        return false;
-      }
-      if (!beginPendingGuidedSetupRetry(pendingSetupAutoRetryInFlightRef.current, resolvedAgentId)) {
-        return false;
-      }
-      const pendingSetup = pendingCreateSetupsByAgentIdRef.current[resolvedAgentId];
-      if (!pendingSetup) {
-        endPendingGuidedSetupRetry(pendingSetupAutoRetryInFlightRef.current, resolvedAgentId);
-        return false;
-      }
-      setRetryPendingSetupBusyAgentId(resolvedAgentId);
-      try {
-        return await runPendingSetupRetryLifecycle(
-          {
-            agentId: resolvedAgentId,
-            source: params.source,
-          },
-          {
-            executeRetry: async (agentId) =>
-              runGuidedRetryWorkflow(agentId, {
-                applyPendingSetup: async (targetAgentId) =>
-                  applyPendingGuidedSetupForAgent({
-                    client,
-                    agentId: targetAgentId,
-                    pendingSetupsByAgentId: pendingCreateSetupsByAgentIdRef.current,
-                  }),
-                removePending: (targetAgentId) => {
-                  setPendingCreateSetupsByAgentId((current) =>
-                    removePendingGuidedSetup(current, targetAgentId)
-                  );
-                },
+      return await applyPendingGuidedSetupRetryViaStudio({
+        agentId: params.agentId,
+        source: params.source,
+        retryBusyAgentId: retryPendingSetupBusyAgentId,
+        inFlightAgentIds: pendingSetupAutoRetryInFlightRef.current,
+        pendingSetupsByAgentId: pendingCreateSetupsByAgentIdRef.current,
+        setRetryBusyAgentId: setRetryPendingSetupBusyAgentId,
+        executeRetry: async (agentId) =>
+          runGuidedRetryWorkflow(agentId, {
+            applyPendingSetup: async (targetAgentId) =>
+              applyPendingGuidedSetupForAgent({
+                client,
+                agentId: targetAgentId,
+                pendingSetupsByAgentId: pendingCreateSetupsByAgentIdRef.current,
               }),
-            isDisconnectLikeError: isGatewayDisconnectLikeError,
-            resolveAgentName: (agentId) =>
-              stateRef.current.agents.find((agent) => agent.agentId === agentId)?.name ?? agentId,
-            onApplied: async () => {
-              await loadAgents();
+            removePending: (targetAgentId) => {
+              setPendingCreateSetupsByAgentId((current) =>
+                removePendingGuidedSetup(current, targetAgentId)
+              );
             },
-            onError: (message) => {
-              setError(message);
-            },
-          }
-        );
-      } finally {
-        endPendingGuidedSetupRetry(pendingSetupAutoRetryInFlightRef.current, resolvedAgentId);
-        setRetryPendingSetupBusyAgentId((current) =>
-          current === resolvedAgentId ? null : current
-        );
-      }
+          }),
+        isDisconnectLikeError: isGatewayDisconnectLikeError,
+        resolveAgentName: (agentId) =>
+          stateRef.current.agents.find((agent) => agent.agentId === agentId)?.name ??
+          agentId,
+        onApplied: async () => {
+          await loadAgents();
+        },
+        onError: (message) => {
+          setError(message);
+        },
+      });
     },
     [client, loadAgents, retryPendingSetupBusyAgentId, setError]
   );
