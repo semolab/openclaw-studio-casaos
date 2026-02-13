@@ -1,6 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentGuidedSetup } from "@/features/agents/operations/createAgentOperation";
 import {
+  removePendingGuidedSetup,
+  upsertPendingGuidedSetup,
+} from "@/features/agents/creation/recovery";
+import {
+  beginPendingGuidedSetupRetry,
+  endPendingGuidedSetupRetry,
+} from "@/features/agents/creation/pendingSetupRetry";
+import {
   resolveGuidedCreateCompletion,
   runGuidedCreateWorkflow,
   runGuidedRetryWorkflow,
@@ -121,5 +129,50 @@ describe("guidedCreateWorkflow integration", () => {
     expect(result).toEqual({ applied: true });
     expect(pendingByAgentId).toEqual({});
     expect(busyAgentId).toBeNull();
+  });
+
+  it("preserves pending setup entry ordering and replacement semantics across retries", async () => {
+    const setupA1 = createSetup();
+    const setupA2 = {
+      ...createSetup(),
+      files: { "AGENTS.md": "# Updated mission" },
+    };
+    const setupB = createSetup();
+    let pendingByAgentId: Record<string, AgentGuidedSetup> = {};
+    pendingByAgentId = upsertPendingGuidedSetup(pendingByAgentId, "agent-b", setupB);
+    pendingByAgentId = upsertPendingGuidedSetup(pendingByAgentId, "agent-a", setupA1);
+
+    await runGuidedRetryWorkflow("agent-a", {
+      applyPendingSetup: async () => ({ applied: true }),
+      removePending: (agentId) => {
+        pendingByAgentId = removePendingGuidedSetup(pendingByAgentId, agentId);
+      },
+    });
+
+    expect(Object.keys(pendingByAgentId)).toEqual(["agent-b"]);
+
+    pendingByAgentId = upsertPendingGuidedSetup(pendingByAgentId, "agent-a", setupA2);
+
+    expect(Object.keys(pendingByAgentId)).toEqual(["agent-b", "agent-a"]);
+    expect(pendingByAgentId["agent-a"]).toEqual(setupA2);
+  });
+
+  it("does not schedule duplicate retry when in-flight guard is set", async () => {
+    const inFlightAgentIds = new Set<string>();
+    const startedFirst = beginPendingGuidedSetupRetry(inFlightAgentIds, "agent-guarded");
+    const startedSecond = beginPendingGuidedSetupRetry(inFlightAgentIds, "agent-guarded");
+
+    expect(startedFirst).toBe(true);
+    expect(startedSecond).toBe(false);
+
+    if (startedFirst) {
+      await runGuidedRetryWorkflow("agent-guarded", {
+        applyPendingSetup: async () => ({ applied: true }),
+        removePending: () => undefined,
+      });
+    }
+    endPendingGuidedSetupRetry(inFlightAgentIds, "agent-guarded");
+
+    expect(inFlightAgentIds.has("agent-guarded")).toBe(false);
   });
 });
