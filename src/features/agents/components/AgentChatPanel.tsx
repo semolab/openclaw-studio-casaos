@@ -977,14 +977,15 @@ export const AgentChatPanel = ({
 
   const modelOptions = useMemo(
     () =>
-      models.map((entry) => ({
-        value: `${entry.provider}/${entry.id}`,
-        label:
-          entry.name === `${entry.provider}/${entry.id}`
-            ? entry.name
-            : `${entry.name} (${entry.provider}/${entry.id})`,
-        reasoning: entry.reasoning,
-      })),
+      models.map((entry) => {
+        const key = `${entry.provider}/${entry.id}`;
+        const alias = typeof entry.name === "string" ? entry.name.trim() : "";
+        return {
+          value: key,
+          label: !alias || alias === key ? key : alias,
+          reasoning: entry.reasoning,
+        };
+      }),
     [models]
   );
   const modelValue = agent.model ?? "";
