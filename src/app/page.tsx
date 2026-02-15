@@ -13,13 +13,10 @@ import { ConnectionPanel } from "@/features/agents/components/ConnectionPanel";
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { EmptyStatePanel } from "@/features/agents/components/EmptyStatePanel";
 import {
-  extractText,
   isHeartbeatPrompt,
-  stripUiMetadata,
 } from "@/lib/text/message-extract";
 import {
   parseAgentIdFromSessionKey,
-  syncGatewaySessionSettings,
   useGatewayConnection,
 } from "@/lib/gateway/GatewayClient";
 import { createRafBatcher } from "@/lib/dom";
@@ -65,7 +62,6 @@ import {
   updateGatewayAgentOverrides,
   type AgentHeartbeatSummary,
 } from "@/lib/gateway/agentConfig";
-import { readGatewayAgentExecApprovals, upsertGatewayAgentExecApprovals } from "@/lib/gateway/execApprovals";
 import { buildAvatarDataUrl } from "@/lib/avatars/multiavatar";
 import { createStudioSettingsCoordinator } from "@/lib/studio/coordinator";
 import { resolveFocusedPreference } from "@/lib/studio/settings";
@@ -134,10 +130,13 @@ import {
   logTranscriptDebugMetric,
 } from "@/features/agents/state/transcript";
 import {
-  buildLatestUpdatePatch,
-  resolveLatestUpdateIntent,
   resolveLatestUpdateKind,
 } from "@/features/agents/operations/latestUpdateWorkflow";
+import { createSpecialLatestUpdateOperation } from "@/features/agents/operations/specialLatestUpdateOperation";
+import {
+  updateExecutionRoleViaStudio,
+  type ExecutionRoleId,
+} from "@/features/agents/operations/executionRoleUpdateOperation";
 import {
   resolveSummarySnapshotIntent,
 } from "@/features/agents/operations/fleetLifecycleWorkflow";
@@ -156,32 +155,9 @@ import {
 } from "@/features/agents/operations/agentMutationLifecycleController";
 import { runPendingGuidedSetupAutoRetryViaStudio } from "@/features/agents/operations/pendingGuidedSetupAutoRetryOperation";
 
-type ChatHistoryMessage = Record<string, unknown>;
-
-type ChatHistoryResult = {
-  sessionKey: string;
-  sessionId?: string;
-  messages: ChatHistoryMessage[];
-  thinkingLevel?: string;
-};
-
 const DEFAULT_CHAT_HISTORY_LIMIT = 200;
 const MAX_CHAT_HISTORY_LIMIT = 5000;
 const PENDING_EXEC_APPROVAL_PRUNE_GRACE_MS = 500;
-
-type SessionsListEntry = {
-  key: string;
-  updatedAt?: number | null;
-  displayName?: string;
-  origin?: { label?: string | null; provider?: string | null } | null;
-  thinkingLevel?: string;
-  modelProvider?: string;
-  model?: string;
-};
-
-type SessionsListResult = {
-  sessions?: SessionsListEntry[];
-};
 
 type MobilePane = "fleet" | "chat" | "settings" | "brain";
 type DeleteAgentBlockPhase = "queued" | "deleting" | "awaiting-restart";
@@ -209,26 +185,6 @@ type RenameAgentBlockState = {
 };
 
 const RESERVED_MAIN_AGENT_ID = "main";
-
-const findLatestHeartbeatResponse = (messages: ChatHistoryMessage[]) => {
-  let awaitingHeartbeatReply = false;
-  let latestResponse: string | null = null;
-  for (const message of messages) {
-    const role = typeof message.role === "string" ? message.role : "";
-    if (role === "user") {
-      const text = stripUiMetadata(extractText(message) ?? "").trim();
-      awaitingHeartbeatReply = isHeartbeatPrompt(text);
-      continue;
-    }
-    if (role === "assistant" && awaitingHeartbeatReply) {
-      const text = stripUiMetadata(extractText(message) ?? "").trim();
-      if (text) {
-        latestResponse = text;
-      }
-    }
-  }
-  return latestResponse;
-};
 
 const resolveNextNewAgentName = (agents: AgentState[]) => {
   const baseName = "New Agent";
@@ -318,7 +274,6 @@ const AgentStudioPage = () => {
     null
   );
   const specialUpdateRef = useRef<Map<string, string>>(new Map());
-  const specialUpdateInFlightRef = useRef<Set<string>>(new Set());
   const seenCronEventIdsRef = useRef<Set<string>>(new Set());
   const preferredSelectedAgentIdRef = useRef<string | null>(null);
   const pendingCreateSetupsByAgentIdRef = useRef<Record<string, AgentGuidedSetup>>({});
@@ -527,6 +482,20 @@ const AgentStudioPage = () => {
     return resolveLatestCronJobForAgent(jobs, agentId);
   }, []);
 
+  const specialLatestUpdate = useMemo(() => {
+    return createSpecialLatestUpdateOperation({
+      callGateway: (method, params) => client.call(method, params),
+      listCronJobs: () => listCronJobs(client, { includeDisabled: true }),
+      resolveCronJobForAgent,
+      formatCronJobDisplay,
+      dispatchUpdateAgent: (agentId, patch) => {
+        dispatch({ type: "updateAgent", agentId, patch });
+      },
+      isDisconnectLikeError: isGatewayDisconnectLikeError,
+      logError: (message) => console.error(message),
+    });
+  }, [client, dispatch, resolveCronJobForAgent]);
+
   const loadCronJobsForSettingsAgent = useCallback(
     async (agentId: string) => {
       const resolvedAgentId = agentId.trim();
@@ -582,91 +551,10 @@ const AgentStudioPage = () => {
     [client]
   );
 
-  const updateSpecialLatestUpdate = useCallback(
-    async (agentId: string, agent: AgentState, message: string) => {
-      const intent = resolveLatestUpdateIntent({
-        message,
-        agentId: agent.agentId,
-        sessionKey: agent.sessionKey,
-        hasExistingOverride: Boolean(agent.latestOverride || agent.latestOverrideKind),
-      });
-      if (intent.kind === "noop") return;
-      if (intent.kind === "reset") {
-        dispatch({
-          type: "updateAgent",
-          agentId: agent.agentId,
-          patch: buildLatestUpdatePatch(""),
-        });
-        return;
-      }
-      const key = agentId;
-      if (specialUpdateInFlightRef.current.has(key)) return;
-      specialUpdateInFlightRef.current.add(key);
-      try {
-        if (intent.kind === "fetch-heartbeat") {
-          const sessions = await client.call<SessionsListResult>("sessions.list", {
-            agentId: intent.agentId,
-            includeGlobal: false,
-            includeUnknown: false,
-            limit: intent.sessionLimit,
-          });
-          const entries = Array.isArray(sessions.sessions) ? sessions.sessions : [];
-          const heartbeatSessions = entries.filter((entry) => {
-            const label = entry.origin?.label;
-            return typeof label === "string" && label.toLowerCase() === "heartbeat";
-          });
-          const candidates = heartbeatSessions.length > 0 ? heartbeatSessions : entries;
-          const sorted = [...candidates].sort(
-            (a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)
-          );
-          const sessionKey = sorted[0]?.key;
-          if (!sessionKey) {
-            dispatch({
-              type: "updateAgent",
-              agentId: agent.agentId,
-              patch: buildLatestUpdatePatch(""),
-            });
-            return;
-          }
-          const history = await client.call<ChatHistoryResult>("chat.history", {
-            sessionKey,
-            limit: intent.historyLimit,
-          });
-          const content = findLatestHeartbeatResponse(history.messages ?? []) ?? "";
-          dispatch({
-            type: "updateAgent",
-            agentId: agent.agentId,
-            patch: buildLatestUpdatePatch(content, "heartbeat"),
-          });
-          return;
-        }
-        const cronResult = await listCronJobs(client, { includeDisabled: true });
-        const job = resolveCronJobForAgent(cronResult.jobs, intent.agentId);
-        const content = job ? formatCronJobDisplay(job) : "";
-        dispatch({
-          type: "updateAgent",
-          agentId: agent.agentId,
-          patch: buildLatestUpdatePatch(content, "cron"),
-        });
-      } catch (err) {
-        if (!isGatewayDisconnectLikeError(err)) {
-          const message =
-            err instanceof Error ? err.message : "Failed to load latest cron/heartbeat update.";
-          console.error(message);
-        }
-      } finally {
-        specialUpdateInFlightRef.current.delete(key);
-      }
-    },
-    [client, dispatch, resolveCronJobForAgent]
-  );
-
   const refreshHeartbeatLatestUpdate = useCallback(() => {
     const agents = stateRef.current.agents;
-    for (const agent of agents) {
-      void updateSpecialLatestUpdate(agent.agentId, agent, "heartbeat");
-    }
-  }, [updateSpecialLatestUpdate]);
+    specialLatestUpdate.refreshHeartbeat(agents);
+  }, [specialLatestUpdate]);
 
   const loadAgents = useCallback(async () => {
     if (status !== "connected") return;
@@ -1231,9 +1119,9 @@ const AgentStudioPage = () => {
       const previous = specialUpdateRef.current.get(key);
       if (previous === marker) continue;
       specialUpdateRef.current.set(key, marker);
-      void updateSpecialLatestUpdate(agent.agentId, agent, lastMessage);
+      void specialLatestUpdate.update(agent.agentId, agent, lastMessage);
     }
-  }, [agents, heartbeatTick, updateSpecialLatestUpdate]);
+  }, [agents, heartbeatTick, specialLatestUpdate]);
 
   const loadAgentHistory = useCallback(
     async (agentId: string, options?: { limit?: number }) => {
@@ -1834,7 +1722,7 @@ const AgentStudioPage = () => {
         runtimeEventHandlerRef.current?.clearRunTracking(agent.runId);
         historyInFlightRef.current.delete(sessionKey);
         specialUpdateRef.current.delete(agentId);
-        specialUpdateInFlightRef.current.delete(agentId);
+        specialLatestUpdate.clearInFlight(agentId);
         dispatch({
           type: "updateAgent",
           agentId,
@@ -2095,7 +1983,7 @@ const AgentStudioPage = () => {
       isDisconnectLikeError: isGatewayDisconnectLikeError,
       logWarn: (message, meta) => console.warn(message, meta),
       updateSpecialLatestUpdate: (agentId, agent, message) => {
-        void updateSpecialLatestUpdate(agentId, agent, message);
+        void specialLatestUpdate.update(agentId, agent, message);
       },
     });
     runtimeEventHandlerRef.current = handler;
@@ -2158,9 +2046,9 @@ const AgentStudioPage = () => {
     clearPendingLivePatch,
     queueLivePatch,
     refreshHeartbeatLatestUpdate,
+    specialLatestUpdate,
     handleExecApprovalEvent,
     status,
-    updateSpecialLatestUpdate,
   ]);
 
   useEffect(() => {
@@ -2279,8 +2167,6 @@ const AgentStudioPage = () => {
     ]
   );
 
-  type ExecutionRoleId = "conservative" | "collaborative" | "autonomous";
-
   const handleUpdateExecutionRole = useCallback(
     async (agentId: string, role: ExecutionRoleId) => {
       const guard = resolveMutationStartGuard({
@@ -2300,116 +2186,13 @@ const AgentStudioPage = () => {
         kind: "update-agent-execution-role",
         label: `Update execution role for ${agent.name}`,
         run: async () => {
-          const existingPolicy = await readGatewayAgentExecApprovals({
+          await updateExecutionRoleViaStudio({
             client,
             agentId: resolvedAgentId,
-          });
-          const allowlist = existingPolicy?.allowlist ?? [];
-          const nextPolicy =
-            role === "conservative"
-              ? null
-              : role === "autonomous"
-                ? {
-                    security: "full" as const,
-                    ask: "off" as const,
-                    allowlist,
-                  }
-                : {
-                    security: "allowlist" as const,
-                    ask: "always" as const,
-                    allowlist,
-                  };
-
-          await upsertGatewayAgentExecApprovals({
-            client,
-            agentId: resolvedAgentId,
-            policy: nextPolicy,
-          });
-
-          const snapshot = await client.call<{ config?: unknown }>("config.get", {});
-          const baseConfig =
-            snapshot.config && typeof snapshot.config === "object" && !Array.isArray(snapshot.config)
-              ? (snapshot.config as Record<string, unknown>)
-              : undefined;
-          const list = readConfigAgentList(baseConfig);
-          const configEntry = list.find((entry) => entry.id === resolvedAgentId) ?? null;
-          const sandboxRaw =
-            configEntry && typeof (configEntry as Record<string, unknown>).sandbox === "object"
-              ? ((configEntry as Record<string, unknown>).sandbox as unknown)
-              : null;
-          const sandbox =
-            sandboxRaw && typeof sandboxRaw === "object" && !Array.isArray(sandboxRaw)
-              ? (sandboxRaw as Record<string, unknown>)
-              : null;
-          const sandboxMode =
-            typeof sandbox?.mode === "string" ? sandbox.mode.trim().toLowerCase() : "";
-
-          const toolsRaw =
-            configEntry && typeof (configEntry as Record<string, unknown>).tools === "object"
-              ? ((configEntry as Record<string, unknown>).tools as unknown)
-              : null;
-          const tools =
-            toolsRaw && typeof toolsRaw === "object" && !Array.isArray(toolsRaw)
-              ? (toolsRaw as Record<string, unknown>)
-              : null;
-          const coerceStringArray = (value: unknown): string[] | null => {
-            if (!Array.isArray(value)) return null;
-            return value
-              .filter((item): item is string => typeof item === "string")
-              .map((item) => item.trim())
-              .filter((item) => item.length > 0);
-          };
-
-          const existingAllow = coerceStringArray(tools?.allow);
-          const existingAlsoAllow = coerceStringArray(tools?.alsoAllow);
-          const existingDeny = coerceStringArray(tools?.deny) ?? [];
-
-          const usesAllow = existingAllow !== null;
-          const baseAllowed = new Set(usesAllow ? existingAllow : existingAlsoAllow ?? []);
-          const deny = new Set(existingDeny);
-
-          if (role === "conservative") {
-            baseAllowed.delete("group:runtime");
-            deny.add("group:runtime");
-          } else {
-            baseAllowed.add("group:runtime");
-            deny.delete("group:runtime");
-          }
-
-          const allowedList = Array.from(baseAllowed);
-          const denyList = Array.from(deny).filter((entry) => !baseAllowed.has(entry));
-
-          await updateGatewayAgentOverrides({
-            client,
-            agentId: resolvedAgentId,
-            overrides: {
-              tools: usesAllow ? { allow: allowedList, deny: denyList } : { alsoAllow: allowedList, deny: denyList },
-            },
-          });
-
-          const execHost =
-            role === "conservative"
-              ? null
-              : sandboxMode === "all"
-                ? "sandbox"
-                : "gateway";
-          const execSecurity =
-            role === "conservative"
-              ? "deny"
-              : role === "autonomous"
-                ? "full"
-                : "allowlist";
-          const execAsk =
-            role === "conservative" ? "off" : role === "autonomous" ? "off" : "always";
-          await syncGatewaySessionSettings({
-            client,
             sessionKey: agent.sessionKey,
-            execHost,
-            execSecurity,
-            execAsk,
+            role,
+            loadAgents,
           });
-
-          await loadAgents();
         },
       });
     },
