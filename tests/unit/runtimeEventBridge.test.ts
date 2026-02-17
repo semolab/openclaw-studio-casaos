@@ -15,6 +15,7 @@ import {
   resolveLifecyclePatch,
   shouldPublishAssistantStream,
 } from "@/features/agents/state/runtimeEventBridge";
+import { EXEC_APPROVAL_AUTO_RESUME_MARKER } from "@/lib/text/message-extract";
 
 describe("runtime event bridge helpers", () => {
   it("classifies gateway events by routing category", () => {
@@ -316,6 +317,23 @@ describe("runtime event bridge helpers", () => {
     expect(history.lastAssistantAt).toBe(Date.parse("2024-01-01T00:00:01.000Z"));
     expect(history.lastRole).toBe("assistant");
     expect(history.lastUser).toBe("hello there");
+  });
+
+  it("does not render internal auto-resume user messages in reconstructed history", () => {
+    const history = buildHistoryLines([
+      {
+        role: "user",
+        content: `[Tue 2026-02-17 12:52 PST] ${EXEC_APPROVAL_AUTO_RESUME_MARKER}
+Continue where you left off and finish the task.`,
+      },
+      {
+        role: "assistant",
+        content: "resumed output",
+      },
+    ]);
+
+    expect(history.lines).toEqual(["resumed output"]);
+    expect(history.lastUser).toBeNull();
   });
 
   it("preserves markdown-rich assistant lines and explicit tool boundaries", () => {

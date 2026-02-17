@@ -25,6 +25,7 @@ export const resolveExecApprovalViaStudio = async (params: {
   setPendingExecApprovalsByAgentId: SetState<Record<string, PendingExecApproval[]>>;
   setUnscopedPendingExecApprovals: SetState<PendingExecApproval[]>;
   requestHistoryRefresh: (agentId: string) => Promise<void> | void;
+  onAllowed?: (params: { approval: PendingExecApproval; targetAgentId: string }) => Promise<void> | void;
   isDisconnectLikeError: (error: unknown) => boolean;
   shouldTreatUnknownId?: (error: unknown) => boolean;
   logWarn?: (message: string, error: unknown) => void;
@@ -116,6 +117,7 @@ export const resolveExecApprovalViaStudio = async (params: {
       return;
     }
 
+    if (!approval) return;
     const targetAgentId = resolveApprovalTargetAgentId(approval);
     if (!targetAgentId) return;
 
@@ -135,6 +137,7 @@ export const resolveExecApprovalViaStudio = async (params: {
     }
 
     await params.requestHistoryRefresh(targetAgentId);
+    await params.onAllowed?.({ approval, targetAgentId });
   } catch (err) {
     const shouldTreatUnknownId = params.shouldTreatUnknownId ?? shouldTreatExecApprovalResolveErrorAsUnknownId;
     if (shouldTreatUnknownId(err)) {

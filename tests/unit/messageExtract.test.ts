@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeAssistantDisplayText } from "@/lib/text/assistantText";
 import {
   buildAgentInstruction,
+  EXEC_APPROVAL_AUTO_RESUME_MARKER,
   extractText,
   extractTextCached,
   extractThinking,
@@ -104,6 +105,18 @@ describe("message-extract", () => {
 [message_id: e050a641-aa32-4950-8083-c3bb7efdfc6d]`;
 
     expect(stripUiMetadata(raw)).toBe("[Thu 2026-02-12 01:14 UTC] nope none of those are it. keep looking");
+  });
+
+  it("hides internal exec approval auto-resume messages from transcript text", () => {
+    const raw = `[Tue 2026-02-17 12:52 PST] ${EXEC_APPROVAL_AUTO_RESUME_MARKER}
+Continue where you left off and finish the task.`;
+    expect(stripUiMetadata(raw)).toBe("");
+  });
+
+  it("hides legacy auto-resume messages without internal marker", () => {
+    const raw = `printf "\\n== Root (/) ==\\n" ls -la /
+[Tue 2026-02-17 12:52 PST] The exec approval was granted. Continue where you left off and finish the task.`;
+    expect(stripUiMetadata(raw)).toBe("");
   });
 
   it("normalizes assistant helper text shape", () => {

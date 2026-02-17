@@ -58,6 +58,7 @@ describe("execApprovalResolveOperation", () => {
     });
     const unscopedApprovals = createState<PendingExecApproval[]>([]);
     const requestHistoryRefresh = vi.fn();
+    const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
       client: { call },
@@ -72,6 +73,7 @@ describe("execApprovalResolveOperation", () => {
       setPendingExecApprovalsByAgentId: approvalsByAgentId.set,
       setUnscopedPendingExecApprovals: unscopedApprovals.set,
       requestHistoryRefresh,
+      onAllowed,
       isDisconnectLikeError: () => false,
     });
 
@@ -81,6 +83,7 @@ describe("execApprovalResolveOperation", () => {
     expect(approvalsByAgentId.get()).toEqual({});
     expect(unscopedApprovals.get()).toEqual([]);
     expect(requestHistoryRefresh).toHaveBeenCalledWith("a1");
+    expect(onAllowed).toHaveBeenCalledWith({ approval, targetAgentId: "a1" });
   });
 
   it("treats unknown approval id as already removed", async () => {
@@ -122,6 +125,7 @@ describe("execApprovalResolveOperation", () => {
       a1: [approval],
     });
     const unscopedApprovals = createState<PendingExecApproval[]>([]);
+    const onAllowed = vi.fn();
 
     await resolveExecApprovalViaStudio({
       client: { call },
@@ -136,11 +140,70 @@ describe("execApprovalResolveOperation", () => {
       setPendingExecApprovalsByAgentId: approvalsByAgentId.set,
       setUnscopedPendingExecApprovals: unscopedApprovals.set,
       requestHistoryRefresh: vi.fn(),
+      onAllowed,
       isDisconnectLikeError: () => false,
     });
 
     expect(approvalsByAgentId.get()).toEqual({});
     expect(unscopedApprovals.get()).toEqual([]);
+    expect(onAllowed).not.toHaveBeenCalled();
+  });
+
+  it("does not trigger onAllowed for deny decisions", async () => {
+    const call = vi.fn(async (method: string) => {
+      if (method === "exec.approval.resolve") {
+        return { ok: true };
+      }
+      throw new Error(`unexpected method ${method}`);
+    });
+
+    const approval: PendingExecApproval = {
+      id: "appr-1",
+      agentId: "a1",
+      sessionKey: "sess-1",
+      command: "echo hi",
+      cwd: null,
+      host: null,
+      security: null,
+      ask: null,
+      resolvedPath: null,
+      createdAtMs: Date.now(),
+      expiresAtMs: Date.now() + 60_000,
+      resolving: false,
+      error: null,
+    };
+
+    const agent = {
+      agentId: "a1",
+      sessionKey: "sess-1",
+      sessionCreated: true,
+      status: "running",
+      runId: "run-1",
+    } as unknown as AgentState;
+
+    const approvalsByAgentId = createState<Record<string, PendingExecApproval[]>>({
+      a1: [approval],
+    });
+    const unscopedApprovals = createState<PendingExecApproval[]>([]);
+    const onAllowed = vi.fn();
+
+    await resolveExecApprovalViaStudio({
+      client: { call },
+      approvalId: "appr-1",
+      decision: "deny",
+      getAgents: () => [agent],
+      getLatestAgent: () => agent,
+      getPendingState: () => ({
+        approvalsByAgentId: approvalsByAgentId.get(),
+        unscopedApprovals: unscopedApprovals.get(),
+      }),
+      setPendingExecApprovalsByAgentId: approvalsByAgentId.set,
+      setUnscopedPendingExecApprovals: unscopedApprovals.set,
+      requestHistoryRefresh: vi.fn(),
+      onAllowed,
+      isDisconnectLikeError: () => false,
+    });
+
+    expect(onAllowed).not.toHaveBeenCalled();
   });
 });
-

@@ -671,6 +671,7 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
     liveAssistantCharCount,
     liveThinkingCharCount,
     outputLineCount,
+    pendingExecApprovals.length,
     scheduleScrollToBottom,
     scrollToBottomNextOutputRef,
   ]);
@@ -739,13 +740,6 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
             <EmptyStatePanel title="No messages yet." compact className="p-3 text-xs" />
           ) : (
             <>
-              {pendingExecApprovals.map((approval) => (
-                <ExecApprovalCard
-                  key={approval.id}
-                  approval={approval}
-                  onResolve={onResolveExecApproval}
-                />
-              ))}
               <AgentChatFinalItems
                 agentId={agentId}
                 name={name}
@@ -772,6 +766,13 @@ const AgentChatTranscript = memo(function AgentChatTranscript({
                   streaming={status === "running"}
                 />
               ) : null}
+              {pendingExecApprovals.map((approval) => (
+                <ExecApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  onResolve={onResolveExecApproval}
+                />
+              ))}
               <div ref={chatBottomRef} />
             </>
           )}

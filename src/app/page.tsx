@@ -13,6 +13,7 @@ import { ConnectionPanel } from "@/features/agents/components/ConnectionPanel";
 import { GatewayConnectScreen } from "@/features/agents/components/GatewayConnectScreen";
 import { EmptyStatePanel } from "@/features/agents/components/EmptyStatePanel";
 import {
+  EXEC_APPROVAL_AUTO_RESUME_MARKER,
   isHeartbeatPrompt,
 } from "@/lib/text/message-extract";
 import {
@@ -113,6 +114,7 @@ import {
   removePendingApprovalByIdMap,
   upsertPendingApproval,
 } from "@/features/agents/approvals/pendingStore";
+import { shouldPauseRunForPendingExecApproval } from "@/features/agents/approvals/execApprovalPausePolicy";
 import {
   TRANSCRIPT_V2_ENABLED,
   logTranscriptDebugMetric,
@@ -281,6 +283,7 @@ const AgentStudioPage = () => {
   const reconcileRunInFlightRef = useRef<Set<string>>(new Set());
   const pendingSetupAutoRetryAttemptedRef = useRef<Set<string>>(new Set());
   const pendingSetupAutoRetryInFlightRef = useRef<Set<string>>(new Set());
+  const approvalPausedRunIdByAgentRef = useRef<Map<string, string>>(new Map());
 
   const agents = state.agents;
   const selectedAgent = useMemo(() => getSelectedAgent(state), [state]);
@@ -1880,11 +1883,111 @@ const AgentStudioPage = () => {
         setPendingExecApprovalsByAgentId,
         setUnscopedPendingExecApprovals,
         requestHistoryRefresh: (agentId) => loadAgentHistory(agentId),
+        onAllowed: async ({ approval, targetAgentId }) => {
+          const pausedByAgent = approvalPausedRunIdByAgentRef.current;
+          const pausedRunId = pausedByAgent.get(targetAgentId) ?? null;
+          if (!pausedRunId) return;
+
+          const scopedPending = (pendingExecApprovalsByAgentId[targetAgentId] ?? []).some(
+            (pendingApproval) => pendingApproval.id !== approval.id
+          );
+          const targetSessionKey = approval.sessionKey?.trim() ?? "";
+          const unscopedPending = unscopedPendingExecApprovals.some((pendingApproval) => {
+            if (pendingApproval.id === approval.id) return false;
+            const pendingAgentId = pendingApproval.agentId?.trim() ?? "";
+            if (pendingAgentId && pendingAgentId === targetAgentId) return true;
+            if (!targetSessionKey) return false;
+            return (pendingApproval.sessionKey?.trim() ?? "") === targetSessionKey;
+          });
+          if (scopedPending || unscopedPending) {
+            return;
+          }
+
+          pausedByAgent.delete(targetAgentId);
+          try {
+            await client.call("agent.wait", { runId: pausedRunId, timeoutMs: 15_000 });
+          } catch (waitError) {
+            if (!isGatewayDisconnectLikeError(waitError)) {
+              console.warn("Failed waiting for paused run before auto-resume.", waitError);
+            }
+          }
+
+          const latest = stateRef.current.agents.find((entry) => entry.agentId === targetAgentId) ?? null;
+          if (!latest || latest.status === "running") return;
+          const sessionKey = latest.sessionKey.trim();
+          if (!sessionKey) return;
+
+          await sendChatMessageViaStudio({
+            client,
+            dispatch,
+            getAgent: (agentId) =>
+              stateRef.current.agents.find((entry) => entry.agentId === agentId) ?? null,
+            agentId: targetAgentId,
+            sessionKey,
+            message: `${EXEC_APPROVAL_AUTO_RESUME_MARKER}\nContinue where you left off and finish the task.`,
+            clearRunTracking: (runId) => runtimeEventHandlerRef.current?.clearRunTracking(runId),
+            echoUserMessage: false,
+          });
+        },
         isDisconnectLikeError: isGatewayDisconnectLikeError,
         logWarn: (message, error) => console.warn(message, error),
       });
     },
-    [client, loadAgentHistory, pendingExecApprovalsByAgentId, unscopedPendingExecApprovals]
+    [client, dispatch, loadAgentHistory, pendingExecApprovalsByAgentId, unscopedPendingExecApprovals]
+  );
+
+  const pauseRunForExecApproval = useCallback(
+    async (approval: PendingExecApproval, preferredAgentId?: string | null) => {
+      if (status !== "connected") return;
+
+      const pausedByAgent = approvalPausedRunIdByAgentRef.current;
+      for (const [trackedAgentId, trackedRunId] of pausedByAgent.entries()) {
+        const trackedAgent = stateRef.current.agents.find((entry) => entry.agentId === trackedAgentId);
+        const currentRunId = trackedAgent?.runId?.trim() ?? "";
+        if (!currentRunId || currentRunId !== trackedRunId) {
+          pausedByAgent.delete(trackedAgentId);
+        }
+      }
+
+      const preferred = preferredAgentId?.trim() ?? "";
+      const approvalSessionKey = approval.sessionKey?.trim() ?? "";
+      const agent =
+        (preferred
+          ? stateRef.current.agents.find((entry) => entry.agentId === preferred)
+          : null) ??
+        (approvalSessionKey
+          ? stateRef.current.agents.find((entry) => entry.sessionKey.trim() === approvalSessionKey)
+          : null) ??
+        null;
+      if (!agent) return;
+
+      const runId = agent.runId?.trim() ?? "";
+      if (!runId) return;
+
+      const pausedRunId = pausedByAgent.get(agent.agentId) ?? null;
+      if (
+        !shouldPauseRunForPendingExecApproval({
+          agent,
+          approval,
+          pausedRunId,
+        })
+      ) {
+        return;
+      }
+
+      const sessionKey = agent.sessionKey.trim();
+      if (!sessionKey) return;
+      pausedByAgent.set(agent.agentId, runId);
+      try {
+        await client.call("chat.abort", { sessionKey });
+      } catch (err) {
+        pausedByAgent.delete(agent.agentId);
+        if (!isGatewayDisconnectLikeError(err)) {
+          console.warn("Failed to pause run for pending exec approval.", err);
+        }
+      }
+    },
+    [client, status]
   );
 
   const handleGatewayEventIngress = useCallback(
@@ -1928,6 +2031,7 @@ const AgentStudioPage = () => {
           setUnscopedPendingExecApprovals((current) =>
             removePendingApprovalById(current, scopedUpsert.approval.id)
           );
+          void pauseRunForExecApproval(scopedUpsert.approval, scopedUpsert.agentId);
         }
         for (const unscopedUpsert of effects.unscopedUpserts) {
           setPendingExecApprovalsByAgentId((current) =>
@@ -1937,6 +2041,7 @@ const AgentStudioPage = () => {
             const withoutExisting = removePendingApprovalById(current, unscopedUpsert.id);
             return upsertPendingApproval(withoutExisting, unscopedUpsert);
           });
+          void pauseRunForExecApproval(unscopedUpsert);
         }
         for (const agentId of effects.markActivityAgentIds) {
           dispatch({ type: "markActivity", agentId });
@@ -1970,7 +2075,7 @@ const AgentStudioPage = () => {
         at: intent.activityAtMs ?? undefined,
       });
     },
-    [dispatch]
+    [dispatch, pauseRunForExecApproval]
   );
 
   useEffect(() => {

@@ -89,6 +89,34 @@ describe("AgentChatPanel exec approvals", () => {
     expect(screen.getByText("CWD: /repo")).toBeInTheDocument();
   });
 
+  it("renders pending approvals after transcript content", () => {
+    render(
+      createElement(AgentChatPanel, {
+        agent: {
+          ...createAgent(),
+          outputLines: ["> inspect approvals", "assistant says hello"],
+        },
+        isSelected: true,
+        canSend: true,
+        models: [],
+        stopBusy: false,
+        onLoadMoreHistory: vi.fn(),
+        onOpenSettings: vi.fn(),
+        onModelChange: vi.fn(),
+        onThinkingChange: vi.fn(),
+        onDraftChange: vi.fn(),
+        onSend: vi.fn(),
+        onStopRun: vi.fn(),
+        onAvatarShuffle: vi.fn(),
+        pendingExecApprovals: [createApproval()],
+      })
+    );
+
+    const transcriptText = screen.getByText("assistant says hello");
+    const approvalCard = screen.getByTestId("exec-approval-card-approval-1");
+    expect(transcriptText.compareDocumentPosition(approvalCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("invokes resolve callback for all approval decisions", () => {
     const onResolveExecApproval = vi.fn();
     render(
