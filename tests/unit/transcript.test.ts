@@ -62,6 +62,92 @@ describe("transcript", () => {
     expect(buildOutputLinesFromTranscriptEntries(entries)).toEqual(["> hello", "assistant reply"]);
   });
 
+  it("keeps sequence order when only one entry has a timestamp", () => {
+    const entries = sortTranscriptEntries([
+      createEntry({
+        line: "assistant reply",
+        source: "runtime-chat",
+        sequence: 1,
+        role: "assistant",
+        kind: "assistant",
+      }),
+      createEntry({
+        line: "> hello",
+        source: "local-send",
+        sequence: 2,
+        timestampMs: 1_000,
+        role: "user",
+        kind: "user",
+      }),
+    ]);
+
+    expect(buildOutputLinesFromTranscriptEntries(entries)).toEqual([
+      "assistant reply",
+      "> hello",
+    ]);
+  });
+
+  it("keeps sequence order when entries share the same timestamp", () => {
+    const entries = sortTranscriptEntries([
+      createEntry({
+        line: "assistant reply",
+        source: "runtime-chat",
+        sequence: 1,
+        timestampMs: 1_000,
+        role: "assistant",
+        kind: "assistant",
+      }),
+      createEntry({
+        line: "> hello",
+        source: "local-send",
+        sequence: 2,
+        timestampMs: 1_000,
+        role: "user",
+        kind: "user",
+      }),
+    ]);
+
+    expect(buildOutputLinesFromTranscriptEntries(entries)).toEqual([
+      "assistant reply",
+      "> hello",
+    ]);
+  });
+
+  it("keeps assistant thinking blocks together when timestamps tie", () => {
+    const entries = sortTranscriptEntries([
+      createEntry({
+        line: "_plan_",
+        source: "runtime-chat",
+        sequence: 1,
+        timestampMs: 2_000,
+        role: "assistant",
+        kind: "thinking",
+      }),
+      createEntry({
+        line: "answer",
+        source: "runtime-chat",
+        sequence: 2,
+        timestampMs: 2_000,
+        role: "assistant",
+        kind: "assistant",
+      }),
+      createEntry({
+        line: "> next question",
+        source: "local-send",
+        sequence: 3,
+        timestampMs: 2_000,
+        role: "user",
+        kind: "user",
+      }),
+    ]);
+
+    expect(buildOutputLinesFromTranscriptEntries(entries)).toEqual([
+      "_plan_",
+      "answer",
+      "> next question",
+    ]);
+  });
+
   it("merges history entries by confirming optimistic local entries", () => {
     const existing = [
       createEntry({

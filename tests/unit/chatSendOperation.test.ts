@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentState } from "@/features/agents/state/store";
 import { sendChatMessageViaStudio } from "@/features/agents/operations/chatSendOperation";
+import { formatMetaMarkdown } from "@/lib/text/message-extract";
 
 const createAgent = (overrides?: Partial<AgentState>): AgentState => {
   const base: AgentState = {
@@ -299,5 +300,93 @@ describe("sendChatMessageViaStudio", () => {
 
     expect(appendLines).toContain("> Hello world");
     expect(appendLines.some((line) => line.startsWith("[[meta]]"))).toBe(false);
+  });
+
+  it("uses_monotonic_timestamp_for_optimistic_user_turn_ordering", async () => {
+    const sessionKey = "agent:agent-1:studio:test-session";
+    const agent = createAgent({
+      sessionSettingsSynced: true,
+      transcriptEntries: [
+        {
+          entryId: "history:assistant:1",
+          role: "assistant",
+          kind: "assistant",
+          text: "previous assistant",
+          sessionKey,
+          runId: null,
+          source: "history",
+          timestampMs: 5000,
+          sequenceKey: 10,
+          confirmed: true,
+          fingerprint: "fp-prev-assistant",
+        },
+      ],
+    });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ ok: true }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey: agent.sessionKey,
+      message: "new message",
+      now: () => 1000,
+      generateRunId: () => "run-1",
+    });
+
+    const optimisticUserAppend = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .find(
+        (action) =>
+          action &&
+          typeof action === "object" &&
+          "type" in action &&
+          action.type === "appendOutput" &&
+          "line" in action &&
+          action.line === "> new message"
+      );
+    expect(optimisticUserAppend).toBeTruthy();
+    expect((optimisticUserAppend as { transcript?: { timestampMs?: number } }).transcript?.timestampMs).toBe(5001);
+  });
+
+  it("uses_output_meta_timestamps_when_transcript_entries_are_missing", async () => {
+    const sessionKey = "agent:agent-1:studio:test-session";
+    const agent = createAgent({
+      sessionSettingsSynced: true,
+      transcriptEntries: undefined,
+      outputLines: [
+        formatMetaMarkdown({ role: "assistant", timestamp: 12_000 }),
+        "previous assistant",
+      ],
+    });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ ok: true }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey,
+      message: "new message",
+      now: () => 1000,
+      generateRunId: () => "run-1",
+    });
+
+    const optimisticUserAppend = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .find(
+        (action) =>
+          action &&
+          typeof action === "object" &&
+          "type" in action &&
+          action.type === "appendOutput" &&
+          "line" in action &&
+          action.line === "> new message"
+      );
+    expect(optimisticUserAppend).toBeTruthy();
+    expect((optimisticUserAppend as { transcript?: { timestampMs?: number } }).transcript?.timestampMs).toBe(12_001);
   });
 });

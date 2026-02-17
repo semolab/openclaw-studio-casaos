@@ -204,7 +204,7 @@ describe("buildFinalAgentChatItems", () => {
     ]);
   });
 
-  it("coerces exec tool results into assistant text when tool calling is disabled", () => {
+  it("hides tool results when tool calling is disabled", () => {
     const toolLine = formatToolResultMarkdown({
       toolCallId: "call_456",
       toolName: "exec",
@@ -218,10 +218,7 @@ describe("buildFinalAgentChatItems", () => {
       toolCallingEnabled: false,
     });
 
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ kind: "assistant" });
-    expect(items[0]?.text).toContain("completed");
-    expect(items[0]?.text).toContain("pwd");
+    expect(items).toEqual([]);
   });
 });
 

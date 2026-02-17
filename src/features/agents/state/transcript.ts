@@ -82,22 +82,6 @@ export type MergeTranscriptEntriesResult = {
   conflictCount: number;
 };
 
-const KIND_ORDER: Record<TranscriptEntryKind, number> = {
-  meta: 0,
-  user: 1,
-  thinking: 2,
-  tool: 3,
-  assistant: 4,
-};
-
-const SOURCE_ORDER: Record<TranscriptEntrySource, number> = {
-  "local-send": 0,
-  "runtime-chat": 1,
-  "runtime-agent": 2,
-  history: 3,
-  legacy: 4,
-};
-
 const BUCKET_MS = 2_000;
 
 const normalizeComparableText = (value: string): string => {
@@ -204,14 +188,6 @@ const compareEntries = (a: TranscriptEntry, b: TranscriptEntry): number => {
     if (aTs !== bTs) {
       return aTs - bTs;
     }
-    if (a.kind !== b.kind) {
-      return KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
-    }
-    if (a.source !== b.source) {
-      return SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source];
-    }
-  } else if (aHasTs !== bHasTs) {
-    return aHasTs ? -1 : 1;
   }
   return a.sequenceKey - b.sequenceKey;
 };

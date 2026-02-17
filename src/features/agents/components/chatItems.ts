@@ -29,15 +29,6 @@ export type BuildAgentChatItemsInput = {
   toolCallingEnabled: boolean;
 };
 
-const coerceToolMarkdownToAssistantText = (line: string): string | null => {
-  const parsed = parseToolMarkdown(line);
-  if (parsed.kind !== "result") return null;
-  const label = parsed.label.trim().toLowerCase();
-  if (!label.startsWith("exec")) return null;
-  const body = parsed.body.trim();
-  return body || null;
-};
-
 const normalizeUserDisplayText = (value: string): string => {
   return value.replace(/\s+/g, " ").trim();
 };
@@ -58,22 +49,6 @@ export const buildFinalAgentChatItems = ({
 >): AgentChatItem[] => {
   const items: AgentChatItem[] = [];
   let currentMeta: ItemMeta | null = null;
-  let pendingExecOutputs: string[] = [];
-  const flushPendingExecOutputs = () => {
-    if (pendingExecOutputs.length === 0) return;
-    const combined = pendingExecOutputs.join("\n\n");
-    pendingExecOutputs = [];
-    items.push({
-      kind: "assistant",
-      text: normalizeAssistantDisplayText(combined),
-      ...(currentMeta
-        ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs }
-        : {}),
-    });
-  };
-  const clearPendingExecOutputs = () => {
-    pendingExecOutputs = [];
-  };
   const appendThinking = (text: string) => {
     const normalized = text.trim();
     if (!normalized) return;
@@ -120,13 +95,7 @@ export const buildFinalAgentChatItems = ({
       continue;
     }
     if (isToolMarkdown(line)) {
-      if (!toolCallingEnabled) {
-        const coerced = coerceToolMarkdownToAssistantText(line);
-        if (coerced) {
-          pendingExecOutputs.push(coerced);
-        }
-        continue;
-      }
+      if (!toolCallingEnabled) continue;
       items.push({
         kind: "tool",
         text: line,
@@ -136,7 +105,6 @@ export const buildFinalAgentChatItems = ({
     }
     const trimmed = line.trim();
     if (trimmed.startsWith(">")) {
-      flushPendingExecOutputs();
       const text = trimmed.replace(/^>\s?/, "").trim();
       if (text) {
         const normalized = normalizeUserDisplayText(text);
@@ -179,15 +147,12 @@ export const buildFinalAgentChatItems = ({
     }
     const normalizedAssistant = normalizeAssistantDisplayText(line);
     if (!normalizedAssistant) continue;
-    clearPendingExecOutputs();
     items.push({
       kind: "assistant",
       text: normalizedAssistant,
       ...(currentMeta ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs } : {}),
     });
   }
-
-  flushPendingExecOutputs();
   return items;
 };
 
@@ -200,22 +165,6 @@ export const buildAgentChatItems = ({
 }: BuildAgentChatItemsInput): AgentChatItem[] => {
   const items: AgentChatItem[] = [];
   let currentMeta: ItemMeta | null = null;
-  let pendingExecOutputs: string[] = [];
-  const flushPendingExecOutputs = () => {
-    if (pendingExecOutputs.length === 0) return;
-    const combined = pendingExecOutputs.join("\n\n");
-    pendingExecOutputs = [];
-    items.push({
-      kind: "assistant",
-      text: normalizeAssistantDisplayText(combined),
-      ...(currentMeta
-        ? { timestampMs: currentMeta.timestampMs, thinkingDurationMs: currentMeta.thinkingDurationMs }
-        : {}),
-    });
-  };
-  const clearPendingExecOutputs = () => {
-    pendingExecOutputs = [];
-  };
   const appendThinking = (text: string, live?: boolean) => {
     const normalized = text.trim();
     if (!normalized) return;
@@ -267,13 +216,7 @@ export const buildAgentChatItems = ({
       continue;
     }
     if (isToolMarkdown(line)) {
-      if (!toolCallingEnabled) {
-        const coerced = coerceToolMarkdownToAssistantText(line);
-        if (coerced) {
-          pendingExecOutputs.push(coerced);
-        }
-        continue;
-      }
+      if (!toolCallingEnabled) continue;
       items.push({
         kind: "tool",
         text: line,
@@ -283,7 +226,6 @@ export const buildAgentChatItems = ({
     }
     const trimmed = line.trim();
     if (trimmed.startsWith(">")) {
-      flushPendingExecOutputs();
       const text = trimmed.replace(/^>\s?/, "").trim();
       if (text) {
         const currentTimestamp =
@@ -301,7 +243,6 @@ export const buildAgentChatItems = ({
     }
     const normalizedAssistant = normalizeAssistantDisplayText(line);
     if (!normalizedAssistant) continue;
-    clearPendingExecOutputs();
     items.push({
       kind: "assistant",
       text: normalizedAssistant,
@@ -310,11 +251,6 @@ export const buildAgentChatItems = ({
   }
 
   const liveStream = streamText?.trim();
-  if (liveStream) {
-    clearPendingExecOutputs();
-  }
-
-  flushPendingExecOutputs();
 
   if (showThinkingTraces) {
     const normalizedLiveThinking = normalizeThinkingDisplayText(liveThinkingTrace);

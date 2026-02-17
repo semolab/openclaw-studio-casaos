@@ -1,5 +1,9 @@
 import { syncGatewaySessionSettings, type GatewayClient } from "@/lib/gateway/GatewayClient";
-import { buildAgentInstruction } from "@/lib/text/message-extract";
+import {
+  buildAgentInstruction,
+  isMetaMarkdown,
+  parseMetaMarkdown,
+} from "@/lib/text/message-extract";
 import type { AgentState } from "@/features/agents/state/store";
 import { randomUUID } from "@/lib/uuid";
 import type { TranscriptAppendMeta } from "@/features/agents/state/transcript";
@@ -12,6 +16,28 @@ type SendDispatch = (action: SendDispatchAction) => void;
 
 type GatewayClientLike = {
   call: (method: string, params: unknown) => Promise<unknown>;
+};
+
+const resolveLatestTranscriptTimestampMs = (agent: AgentState): number | null => {
+  const entries = agent.transcriptEntries;
+  let latest: number | null = null;
+  if (Array.isArray(entries)) {
+    for (const entry of entries) {
+      const ts = entry?.timestampMs;
+      if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
+      latest = latest === null ? ts : Math.max(latest, ts);
+    }
+  }
+  if (latest !== null) return latest;
+  const lines = agent.outputLines;
+  for (const line of lines) {
+    if (!isMetaMarkdown(line)) continue;
+    const parsed = parseMetaMarkdown(line);
+    const ts = parsed?.timestamp;
+    if (typeof ts !== "number" || !Number.isFinite(ts)) continue;
+    latest = latest === null ? ts : Math.max(latest, ts);
+  }
+  return latest;
 };
 
 export async function sendChatMessageViaStudio(params: {
@@ -67,6 +93,11 @@ export async function sendChatMessageViaStudio(params: {
   }
 
   const userTimestamp = now();
+  const latestTranscriptTimestamp = resolveLatestTranscriptTimestampMs(agent);
+  const optimisticUserOrderTimestamp =
+    typeof latestTranscriptTimestamp === "number"
+      ? Math.max(userTimestamp, latestTranscriptTimestamp + 1)
+      : userTimestamp;
   params.dispatch({
     type: "updateAgent",
     agentId,
@@ -90,7 +121,7 @@ export async function sendChatMessageViaStudio(params: {
         source: "local-send",
         runId,
         sessionKey: params.sessionKey,
-        timestampMs: userTimestamp,
+        timestampMs: optimisticUserOrderTimestamp,
         role: "user",
         kind: "user",
       },
