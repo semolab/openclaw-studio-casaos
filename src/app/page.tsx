@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { AgentChatPanel } from "@/features/agents/components/AgentChatPanel";
 import { AgentCreateModal } from "@/features/agents/components/AgentCreateModal";
 import {
@@ -140,12 +141,25 @@ const CREATE_AGENT_DEFAULT_PERMISSIONS: AgentPermissionsDraft = {
   fileTools: false,
 };
 
-type MobilePane = "fleet" | "chat" | "settings";
+type MobilePane = "fleet" | "chat";
 type InspectSidebarTab = "personality" | "capabilities" | "automations" | "advanced";
 type InspectSidebarState = { agentId: string; tab: InspectSidebarTab } | null;
 type RestartingMutationBlockState = MutationBlockState & { kind: MutationWorkflowKind };
 
 const RESERVED_MAIN_AGENT_ID = "main";
+
+const parseSettingsAgentIdFromPathname = (pathname: string): string | null => {
+  const match = pathname.match(/^\/agents\/([^/]+)\/settings\/?$/);
+  if (!match) return null;
+  try {
+    const decoded = decodeURIComponent(match[1] ?? "");
+    const trimmed = decoded.trim();
+    return trimmed ? trimmed : null;
+  } catch {
+    const raw = (match[1] ?? "").trim();
+    return raw ? raw : null;
+  }
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -227,6 +241,13 @@ const resolveNextNewAgentName = (agents: AgentState[]) => {
 };
 
 const AgentStudioPage = () => {
+  const router = useRouter();
+  const pathname = usePathname();
+  const settingsRouteAgentId = useMemo(
+    () => parseSettingsAgentIdFromPathname(pathname ?? ""),
+    [pathname]
+  );
+  const settingsRouteActive = settingsRouteAgentId !== null;
   const [settingsCoordinator] = useState(() => createStudioSettingsCoordinator());
   const {
     client,
@@ -262,6 +283,7 @@ const AgentStudioPage = () => {
   const [stopBusyAgentId, setStopBusyAgentId] = useState<string | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>("chat");
   const [inspectSidebar, setInspectSidebar] = useState<InspectSidebarState>(null);
+  const [personalityHasUnsavedChanges, setPersonalityHasUnsavedChanges] = useState(false);
   const [settingsCronJobs, setSettingsCronJobs] = useState<CronJobSummary[]>([]);
   const [settingsCronLoading, setSettingsCronLoading] = useState(false);
   const [settingsCronError, setSettingsCronError] = useState<string | null>(null);
@@ -315,6 +337,7 @@ const AgentStudioPage = () => {
   }, [focusedAgent]);
   const inspectSidebarAgentId = inspectSidebar?.agentId ?? null;
   const inspectSidebarTab = inspectSidebar?.tab ?? null;
+  const effectiveSettingsTab: InspectSidebarTab = inspectSidebarTab ?? "personality";
   const inspectSidebarAgent = useMemo(() => {
     if (!inspectSidebarAgentId) return null;
     return agents.find((entry) => entry.agentId === inspectSidebarAgentId) ?? null;
@@ -474,6 +497,34 @@ const AgentStudioPage = () => {
       livePatchBatcherRef.current.cancel();
     }
   }, []);
+
+  const confirmDiscardPersonalityChanges = useCallback(() => {
+    if (!settingsRouteActive) return true;
+    if (effectiveSettingsTab !== "personality") return true;
+    if (!personalityHasUnsavedChanges) return true;
+    return window.confirm("Discard changes?");
+  }, [effectiveSettingsTab, personalityHasUnsavedChanges, settingsRouteActive]);
+
+  const handleBackToChat = useCallback(() => {
+    if (!confirmDiscardPersonalityChanges()) return;
+    setPersonalityHasUnsavedChanges(false);
+    router.push("/");
+  }, [confirmDiscardPersonalityChanges, router]);
+
+  const handleSettingsRouteTabChange = useCallback(
+    (nextTab: InspectSidebarTab) => {
+      const agentId = (inspectSidebar?.agentId ?? settingsRouteAgentId)?.trim();
+      if (!agentId) return;
+      const currentTab = inspectSidebar?.tab ?? "personality";
+      if (currentTab === nextTab) return;
+      if (currentTab === "personality" && nextTab !== "personality") {
+        if (!confirmDiscardPersonalityChanges()) return;
+        setPersonalityHasUnsavedChanges(false);
+      }
+      setInspectSidebar({ agentId, tab: nextTab });
+    },
+    [confirmDiscardPersonalityChanges, inspectSidebar, settingsRouteAgentId]
+  );
 
   useEffect(() => {
     const selector = 'link[data-agent-favicon="true"]';
@@ -819,8 +870,33 @@ const AgentStudioPage = () => {
     }
   }, [setLoading, status]);
 
+  useEffect(() => {
+    if (!settingsRouteAgentId) return;
+    const hasRouteAgent = agents.some((agent) => agent.agentId === settingsRouteAgentId);
+    if (!hasRouteAgent) return;
+    setInspectSidebar((current) => {
+      if (current?.agentId === settingsRouteAgentId) return current;
+      return {
+        agentId: settingsRouteAgentId,
+        tab: current?.tab ?? "personality",
+      };
+    });
+    if (state.selectedAgentId === settingsRouteAgentId) return;
+    dispatch({ type: "selectAgent", agentId: settingsRouteAgentId });
+  }, [agents, dispatch, settingsRouteAgentId, state.selectedAgentId]);
 
   useEffect(() => {
+    if (!settingsRouteActive) return;
+    if (!settingsRouteAgentId) return;
+    if (status !== "connected") return;
+    if (!agentsLoadedOnce) return;
+    if (agents.some((agent) => agent.agentId === settingsRouteAgentId)) return;
+    router.replace("/");
+  }, [agents, agentsLoadedOnce, router, settingsRouteActive, settingsRouteAgentId, status]);
+
+
+  useEffect(() => {
+    if (settingsRouteActive) return;
     if (!inspectSidebar) return;
     const selectedAgentId = state.selectedAgentId?.trim() ?? "";
     if (!selectedAgentId) {
@@ -831,22 +907,29 @@ const AgentStudioPage = () => {
     setInspectSidebar((current) =>
       current ? { ...current, agentId: selectedAgentId } : current
     );
-  }, [inspectSidebar, state.selectedAgentId]);
+  }, [inspectSidebar, settingsRouteActive, state.selectedAgentId]);
 
   useEffect(() => {
+    if (settingsRouteActive) return;
     if (inspectSidebarAgentId && !inspectSidebarAgent) {
       setInspectSidebar(null);
     }
-  }, [inspectSidebarAgent, inspectSidebarAgentId]);
+  }, [inspectSidebarAgent, inspectSidebarAgentId, settingsRouteActive]);
 
   useEffect(() => {
+    if (!settingsRouteActive) return;
     if (!inspectSidebarAgentId) return;
     if (status !== "connected") return;
     void refreshGatewayConfigSnapshot();
-  }, [refreshGatewayConfigSnapshot, inspectSidebarAgentId, status]);
+  }, [refreshGatewayConfigSnapshot, inspectSidebarAgentId, settingsRouteActive, status]);
 
   useEffect(() => {
-    if (!inspectSidebarAgentId || status !== "connected" || inspectSidebarTab !== "automations") {
+    if (
+      !settingsRouteActive ||
+      !inspectSidebarAgentId ||
+      status !== "connected" ||
+      inspectSidebarTab !== "automations"
+    ) {
       setSettingsCronJobs([]);
       setSettingsCronLoading(false);
       setSettingsCronError(null);
@@ -859,6 +942,7 @@ const AgentStudioPage = () => {
     inspectSidebarAgentId,
     inspectSidebarTab,
     loadCronJobsForSettingsAgent,
+    settingsRouteActive,
     status,
   ]);
 
@@ -907,12 +991,6 @@ const AgentStudioPage = () => {
       });
     }
   }, [agents, dispatch, pendingExecApprovalsByAgentId]);
-
-  useEffect(() => {
-    if (mobilePane !== "settings") return;
-    if (inspectSidebarAgent) return;
-    setMobilePane("chat");
-  }, [inspectSidebarAgent, mobilePane]);
 
   useEffect(() => {
     if (status !== "connected") {
@@ -1001,16 +1079,18 @@ const AgentStudioPage = () => {
   }, [loadSummarySnapshot, status]);
 
   useEffect(() => {
+    if (settingsRouteActive) return;
     if (!state.selectedAgentId) return;
     if (agents.some((agent) => agent.agentId === state.selectedAgentId)) return;
     dispatch({ type: "selectAgent", agentId: null });
-  }, [agents, dispatch, state.selectedAgentId]);
+  }, [agents, dispatch, settingsRouteActive, state.selectedAgentId]);
 
   useEffect(() => {
+    if (settingsRouteActive) return;
     const nextId = focusedAgent?.agentId ?? null;
     if (state.selectedAgentId === nextId) return;
     dispatch({ type: "selectAgent", agentId: nextId });
-  }, [dispatch, focusedAgent, state.selectedAgentId]);
+  }, [dispatch, focusedAgent, settingsRouteActive, state.selectedAgentId]);
 
   useEffect(() => {
     for (const agent of agents) {
@@ -1122,33 +1202,23 @@ const AgentStudioPage = () => {
     }
   }, [agents, loadAgentHistory, status]);
 
-  const handleOpenAgentInspectSidebar = useCallback(
-    (agentId: string, tab: InspectSidebarTab) => {
+  const handleOpenAgentSettingsRoute = useCallback(
+    (agentId: string) => {
+      const resolved = agentId.trim();
+      if (!resolved) return;
       flushPendingDraft(focusedAgent?.agentId ?? null);
-      setInspectSidebar({ agentId, tab });
-      setMobilePane("settings");
-      dispatch({ type: "selectAgent", agentId });
+      dispatch({ type: "selectAgent", agentId: resolved });
+      setInspectSidebar((current) => {
+        if (current?.agentId === resolved) return current;
+        return {
+          agentId: resolved,
+          tab: current?.tab ?? "personality",
+        };
+      });
+      setMobilePane("chat");
+      router.push(`/agents/${encodeURIComponent(resolved)}/settings`);
     },
-    [dispatch, flushPendingDraft, focusedAgent]
-  );
-
-  const handleOpenAgentPersonality = useCallback(
-    (agentId: string) => {
-      handleOpenAgentInspectSidebar(agentId, "personality");
-    },
-    [handleOpenAgentInspectSidebar]
-  );
-
-  const handleToggleAgentPersonality = useCallback(
-    (agentId: string) => {
-      if (inspectSidebar?.agentId === agentId) {
-        setInspectSidebar(null);
-        setMobilePane("chat");
-        return;
-      }
-      handleOpenAgentPersonality(agentId);
-    },
-    [handleOpenAgentPersonality, inspectSidebar?.agentId]
+    [dispatch, flushPendingDraft, focusedAgent, router]
   );
 
   const runRestartingMutationLifecycle = useCallback(
@@ -2084,7 +2154,7 @@ const AgentStudioPage = () => {
             if (current?.agentId === resolvedAgentId) return current;
             return { agentId: resolvedAgentId, tab: "capabilities" };
           });
-          setMobilePane("settings");
+          setMobilePane("chat");
         },
       });
     },
@@ -2218,6 +2288,17 @@ const AgentStudioPage = () => {
               onConnectionSettings={() => setShowConnectionPanel(true)}
             />
           </div>
+          {settingsRouteActive ? (
+            <div className="w-full">
+              <button
+                type="button"
+                className="ui-btn-secondary px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
+                onClick={handleBackToChat}
+              >
+                Back to chat
+              </button>
+            </div>
+          ) : null}
           <GatewayConnectScreen
             gatewayUrl={gatewayUrl}
             token={token}
@@ -2299,173 +2380,71 @@ const AgentStudioPage = () => {
           </div>
         ) : null}
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 xl:flex-row">
-          <div className="glass-panel ui-panel p-2 xl:hidden" data-testid="mobile-pane-toggle">
-            <div className="ui-segment grid-cols-3">
+        {settingsRouteActive ? (
+          <div
+            className="ui-panel ui-depth-workspace flex min-h-0 flex-1 flex-col overflow-hidden"
+            data-testid="agent-settings-route-panel"
+          >
+            <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
               <button
                 type="button"
-                className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
-                data-active={mobilePane === "fleet" ? "true" : "false"}
-                onClick={() => setMobilePane("fleet")}
+                className="ui-btn-secondary px-3 py-1.5 font-mono text-[10px] font-semibold tracking-[0.06em]"
+                onClick={handleBackToChat}
               >
-                Fleet
+                Back to chat
               </button>
-              <button
-                type="button"
-                className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
-                data-active={mobilePane === "chat" ? "true" : "false"}
-                onClick={() => setMobilePane("chat")}
-              >
-                Chat
-              </button>
-              <button
-                type="button"
-                className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
-                data-active={mobilePane === "settings" ? "true" : "false"}
-                onClick={() => {
-                  if (!focusedAgent) return;
-                  handleOpenAgentPersonality(focusedAgent.agentId);
-                }}
-                disabled={!focusedAgent}
-              >
-                Settings
-              </button>
+              <div className="truncate font-mono text-[11px] font-semibold tracking-[0.05em] text-muted-foreground">
+                {inspectSidebarAgent?.name ?? settingsRouteAgentId ?? "Agent settings"}
+              </div>
             </div>
-          </div>
-          <div
-            className={`${mobilePane === "fleet" ? "block" : "hidden"} min-h-0 xl:block xl:min-h-0`}
-          >
-            <FleetSidebar
-              agents={filteredAgents}
-              selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
-              filter={focusFilter}
-              onFilterChange={handleFocusFilterChange}
-              onCreateAgent={() => {
-                handleOpenCreateAgentModal();
-              }}
-              createDisabled={status !== "connected" || createAgentBusy || state.loading}
-              createBusy={createAgentBusy}
-              onSelectAgent={(agentId) => {
-                flushPendingDraft(focusedAgent?.agentId ?? null);
-                dispatch({ type: "selectAgent", agentId });
-                setInspectSidebar((current) =>
-                  current ? { ...current, agentId } : current
-                );
-                setMobilePane("chat");
-              }}
-            />
-          </div>
-          <div
-            className={`${mobilePane === "chat" ? "flex" : "hidden"} ui-panel ui-depth-workspace min-h-0 flex-1 overflow-hidden xl:flex`}
-            data-testid="focused-agent-panel"
-          >
-            {focusedAgent ? (
-              <div className="flex min-h-0 flex-1 flex-col">
-                <div className="min-h-0 flex-1">
-                  <AgentChatPanel
-                    agent={focusedAgent}
-                    isSelected={false}
-                    canSend={status === "connected"}
-                    models={gatewayModels}
-                    stopBusy={stopBusyAgentId === focusedAgent.agentId}
-                    stopDisabledReason={focusedAgentStopDisabledReason}
-                    onLoadMoreHistory={() => loadMoreAgentHistory(focusedAgent.agentId)}
-                    onOpenSettings={() => handleToggleAgentPersonality(focusedAgent.agentId)}
-                    onRename={(name) => handleRenameAgent(focusedAgent.agentId, name)}
-                    onNewSession={() => handleNewSession(focusedAgent.agentId)}
-                    onModelChange={(value) =>
-                      handleModelChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
-                    }
-                    onThinkingChange={(value) =>
-                      handleThinkingChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
-                    }
-                    onDraftChange={(value) => handleDraftChange(focusedAgent.agentId, value)}
-                    onSend={(message) =>
-                      handleSend(focusedAgent.agentId, focusedAgent.sessionKey, message)
-                    }
-                    onStopRun={() => handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)}
-                    onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
-                    pendingExecApprovals={focusedPendingExecApprovals}
-                    onResolveExecApproval={(id, decision) => {
-                      void handleResolveExecApproval(id, decision);
-                    }}
-                  />
-                </div>
+            <div className="border-b border-border/60 px-3 py-3">
+              <div className="ui-segment grid-cols-4">
+                {(
+                  [
+                    { id: "personality", label: "Behavior" },
+                    { id: "capabilities", label: "Capabilities" },
+                    { id: "automations", label: "Automations" },
+                    { id: "advanced", label: "Advanced" },
+                  ] as const
+                ).map((entry) => {
+                  const active = effectiveSettingsTab === entry.id;
+                  return (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      className="ui-segment-item px-2 py-2 font-mono text-[11px] font-medium tracking-[0.02em]"
+                      data-active={active ? "true" : "false"}
+                      onClick={() => {
+                        handleSettingsRouteTabChange(entry.id);
+                      }}
+                    >
+                      {entry.label}
+                    </button>
+                  );
+                })}
               </div>
-            ) : (
-              <EmptyStatePanel
-                title={hasAnyAgents ? "No agents match this filter." : "No agents available."}
-                description={
-                  hasAnyAgents
-                    ? undefined
-                    : status === "connected"
-                      ? "Use New Agent in the sidebar to add your first agent."
-                      : "Connect to your gateway to load agents into the studio."
-                }
-                fillHeight
-                className="items-center p-6 text-center text-sm"
-              />
-            )}
-          </div>
-          {inspectSidebarAgent ? (
-            <div
-              className={`${mobilePane === "settings" ? "block" : "hidden"} sidebar-shell glass-panel ui-panel ui-depth-sidepanel flex min-h-0 w-full shrink-0 flex-col overflow-hidden p-0 xl:flex xl:min-w-[468px] xl:max-w-[559px]`}
-            >
-              <div className="border-b border-border/60 px-3 py-3">
-                <div className="ui-segment grid-cols-4">
-                  {(
-                    [
-                      { id: "personality", label: "Behavior" },
-                      { id: "capabilities", label: "Capabilities" },
-                      { id: "automations", label: "Automations" },
-                      { id: "advanced", label: "Advanced" },
-                    ] as const
-                  ).map((entry) => {
-                    const active = inspectSidebarTab === entry.id;
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className="ui-segment-item px-2 py-2 font-mono text-[11px] font-medium tracking-[0.02em]"
-                        data-active={active ? "true" : "false"}
-                        onClick={() =>
-                          setInspectSidebar((current) => {
-                            if (!current) {
-                              return { agentId: inspectSidebarAgent.agentId, tab: entry.id };
-                            }
-                            if (current.tab === entry.id) return current;
-                            return { ...current, tab: entry.id };
-                          })
-                        }
-                      >
-                        {entry.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="min-h-0 flex-1">
-                {inspectSidebarTab === "personality" ? (
+            </div>
+            <div className="min-h-0 flex-1">
+              {inspectSidebarAgent ? (
+                effectiveSettingsTab === "personality" ? (
                   <AgentBrainPanel
                     client={client}
                     agents={agents}
                     selectedAgentId={inspectSidebarAgent.agentId}
+                    onUnsavedChangesChange={setPersonalityHasUnsavedChanges}
                   />
                 ) : (
                   <AgentSettingsPanel
-                    key={`${inspectSidebarAgent.agentId}:${inspectSidebarTab ?? "capabilities"}`}
+                    key={`${inspectSidebarAgent.agentId}:${effectiveSettingsTab}`}
                     mode={
-                      inspectSidebarTab === "automations"
+                      effectiveSettingsTab === "automations"
                         ? "automations"
-                        : inspectSidebarTab === "advanced"
+                        : effectiveSettingsTab === "advanced"
                           ? "advanced"
                           : "capabilities"
                     }
                     agent={inspectSidebarAgent}
-                    onClose={() => {
-                      setInspectSidebar(null);
-                      setMobilePane("chat");
-                    }}
+                    onClose={handleBackToChat}
                     permissionsDraft={settingsAgentPermissionsDraft ?? undefined}
                     onUpdateAgentPermissions={(draft) =>
                       handleUpdateAgentPermissions(inspectSidebarAgent.agentId, draft)
@@ -2491,11 +2470,116 @@ const AgentStudioPage = () => {
                     }
                     controlUiUrl={controlUiUrl}
                   />
-                )}
+                )
+              ) : (
+                <EmptyStatePanel
+                  title="Agent not found."
+                  description="Back to chat and select an available agent."
+                  fillHeight
+                  className="items-center p-6 text-center text-sm"
+                />
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col gap-4 xl:flex-row">
+            <div className="glass-panel ui-panel p-2 xl:hidden" data-testid="mobile-pane-toggle">
+              <div className="ui-segment grid-cols-2">
+                <button
+                  type="button"
+                  className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
+                  data-active={mobilePane === "fleet" ? "true" : "false"}
+                  onClick={() => setMobilePane("fleet")}
+                >
+                  Fleet
+                </button>
+                <button
+                  type="button"
+                  className="ui-segment-item px-2 py-2 font-mono text-[12px] font-medium tracking-[0.02em]"
+                  data-active={mobilePane === "chat" ? "true" : "false"}
+                  onClick={() => setMobilePane("chat")}
+                >
+                  Chat
+                </button>
               </div>
             </div>
-          ) : null}
-        </div>
+            <div
+              className={`${mobilePane === "fleet" ? "block" : "hidden"} min-h-0 xl:block xl:min-h-0`}
+            >
+              <FleetSidebar
+                agents={filteredAgents}
+                selectedAgentId={focusedAgent?.agentId ?? state.selectedAgentId}
+                filter={focusFilter}
+                onFilterChange={handleFocusFilterChange}
+                onCreateAgent={() => {
+                  handleOpenCreateAgentModal();
+                }}
+                createDisabled={status !== "connected" || createAgentBusy || state.loading}
+                createBusy={createAgentBusy}
+                onSelectAgent={(agentId) => {
+                  flushPendingDraft(focusedAgent?.agentId ?? null);
+                  dispatch({ type: "selectAgent", agentId });
+                  setInspectSidebar((current) =>
+                    current ? { ...current, agentId } : current
+                  );
+                  setMobilePane("chat");
+                }}
+              />
+            </div>
+            <div
+              className={`${mobilePane === "chat" ? "flex" : "hidden"} ui-panel ui-depth-workspace min-h-0 flex-1 overflow-hidden xl:flex`}
+              data-testid="focused-agent-panel"
+            >
+              {focusedAgent ? (
+                <div className="flex min-h-0 flex-1 flex-col">
+                  <div className="min-h-0 flex-1">
+                    <AgentChatPanel
+                      agent={focusedAgent}
+                      isSelected={false}
+                      canSend={status === "connected"}
+                      models={gatewayModels}
+                      stopBusy={stopBusyAgentId === focusedAgent.agentId}
+                      stopDisabledReason={focusedAgentStopDisabledReason}
+                      onLoadMoreHistory={() => loadMoreAgentHistory(focusedAgent.agentId)}
+                      onOpenSettings={() => handleOpenAgentSettingsRoute(focusedAgent.agentId)}
+                      onRename={(name) => handleRenameAgent(focusedAgent.agentId, name)}
+                      onNewSession={() => handleNewSession(focusedAgent.agentId)}
+                      onModelChange={(value) =>
+                        handleModelChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
+                      }
+                      onThinkingChange={(value) =>
+                        handleThinkingChange(focusedAgent.agentId, focusedAgent.sessionKey, value)
+                      }
+                      onDraftChange={(value) => handleDraftChange(focusedAgent.agentId, value)}
+                      onSend={(message) =>
+                        handleSend(focusedAgent.agentId, focusedAgent.sessionKey, message)
+                      }
+                      onStopRun={() => handleStopRun(focusedAgent.agentId, focusedAgent.sessionKey)}
+                      onAvatarShuffle={() => handleAvatarShuffle(focusedAgent.agentId)}
+                      pendingExecApprovals={focusedPendingExecApprovals}
+                      onResolveExecApproval={(id, decision) => {
+                        void handleResolveExecApproval(id, decision);
+                      }}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <EmptyStatePanel
+                  title={hasAnyAgents ? "No agents match this filter." : "No agents available."}
+                  description={
+                    hasAnyAgents
+                      ? undefined
+                      : status === "connected"
+                        ? "Use New Agent in the sidebar to add your first agent."
+                        : "Connect to your gateway to load agents into the studio."
+                  }
+                  fillHeight
+                  className="items-center p-6 text-center text-sm"
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       {createAgentModalOpen ? (
         <AgentCreateModal

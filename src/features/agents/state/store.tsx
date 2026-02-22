@@ -415,7 +415,16 @@ const reducer = (state: AgentStoreState, action: Action): AgentStoreState => {
         }),
       };
     }
-    case "selectAgent":
+    case "selectAgent": {
+      if (action.agentId === state.selectedAgentId) {
+        if (action.agentId === null) {
+          return state;
+        }
+        const selected = state.agents.find((agent) => agent.agentId === action.agentId) ?? null;
+        if (!selected || !selected.hasUnseenActivity) {
+          return state;
+        }
+      }
       return {
         ...state,
         selectedAgentId: action.agentId,
@@ -428,6 +437,7 @@ const reducer = (state: AgentStoreState, action: Action): AgentStoreState => {
                   : agent
               ),
       };
+    }
     default:
       return state;
   }

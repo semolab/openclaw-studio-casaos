@@ -1136,6 +1136,7 @@ type AgentBrainPanelProps = {
   client: GatewayClient;
   agents: AgentState[];
   selectedAgentId: string | null;
+  onUnsavedChangesChange?: (dirty: boolean) => void;
 };
 
 type AgentFilesState = ReturnType<typeof createAgentFilesState>;
@@ -1148,7 +1149,7 @@ type UseAgentFilesEditorResult = {
   agentFilesDirty: boolean;
   agentFilesError: string | null;
   setAgentFileContent: (value: string) => void;
-  handleAgentFileTabChange: (nextTab: PersonalityFileName) => Promise<void>;
+  handleAgentFileTabChange: (nextTab: PersonalityFileName) => void;
   saveAgentFiles: () => Promise<boolean>;
   discardAgentFileChanges: () => void;
 };
@@ -1259,18 +1260,6 @@ const useAgentFilesEditor = (params: {
     }
   }, [agentFiles, agentId, client]);
 
-  const handleAgentFileTabChange = useCallback(
-    async (nextTab: PersonalityFileName) => {
-      if (nextTab === agentFileTab) return;
-      if (agentFilesDirty && !agentFilesSaving) {
-        const saved = await saveAgentFiles();
-        if (!saved) return;
-      }
-      setAgentFileTab(nextTab);
-    },
-    [agentFileTab, agentFilesDirty, agentFilesSaving, saveAgentFiles]
-  );
-
   const setAgentFileContent = useCallback(
     (value: string) => {
       setAgentFiles((prev) => ({
@@ -1287,6 +1276,19 @@ const useAgentFilesEditor = (params: {
     setAgentFilesDirty(false);
     setAgentFilesError(null);
   }, [cloneAgentFilesState]);
+
+  const handleAgentFileTabChange = useCallback(
+    (nextTab: PersonalityFileName) => {
+      if (nextTab === agentFileTab) return;
+      if (agentFilesDirty && !agentFilesSaving) {
+        const discardConfirmed = window.confirm("Discard changes?");
+        if (!discardConfirmed) return;
+        discardAgentFileChanges();
+      }
+      setAgentFileTab(nextTab);
+    },
+    [agentFileTab, agentFilesDirty, agentFilesSaving, discardAgentFileChanges]
+  );
 
   useEffect(() => {
     void loadAgentFiles();
@@ -1316,6 +1318,7 @@ export const AgentBrainPanel = ({
   client,
   agents,
   selectedAgentId,
+  onUnsavedChangesChange,
 }: AgentBrainPanelProps) => {
   const selectedAgent = useMemo(
     () =>
@@ -1340,8 +1343,8 @@ export const AgentBrainPanel = ({
   const [previewMode, setPreviewMode] = useState(true);
 
   const handleTabChange = useCallback(
-    async (nextTab: PersonalityFileName) => {
-      await handleAgentFileTabChange(nextTab);
+    (nextTab: PersonalityFileName) => {
+      handleAgentFileTabChange(nextTab);
     },
     [handleAgentFileTabChange]
   );
@@ -1363,6 +1366,24 @@ export const AgentBrainPanel = ({
     if (!saved) return;
     setPreviewMode(true);
   }, [agentFilesLoading, agentFilesSaving, saveAgentFiles]);
+
+  const statusLine = agentFilesLoading
+    ? "Loading files..."
+    : agentFilesSaving
+      ? "Saving changes..."
+      : agentFilesDirty
+        ? "Unsaved changes"
+        : "All changes saved";
+
+  useEffect(() => {
+    onUnsavedChangesChange?.(agentFilesDirty);
+  }, [agentFilesDirty, onUnsavedChangesChange]);
+
+  useEffect(() => {
+    return () => {
+      onUnsavedChangesChange?.(false);
+    };
+  }, [onUnsavedChangesChange]);
 
   return (
     <div
@@ -1388,7 +1409,7 @@ export const AgentBrainPanel = ({
                   className="ui-segment-item px-3 py-1 font-mono text-[10px] font-semibold tracking-[0.06em]"
                   data-active={active ? "true" : "false"}
                   onClick={() => {
-                    void handleTabChange(name);
+                    handleTabChange(name);
                   }}
                 >
                   {PERSONALITY_FILE_LABELS[name]}
@@ -1462,7 +1483,7 @@ export const AgentBrainPanel = ({
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2 pt-2">
-            <div className="text-xs text-muted-foreground">All changes saved</div>
+            <div className="text-xs text-muted-foreground">{statusLine}</div>
           </div>
         </section>
       </div>

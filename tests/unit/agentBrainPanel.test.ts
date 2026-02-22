@@ -145,9 +145,52 @@ describe("AgentBrainPanel", () => {
     });
   });
 
-  it("saves_dirty_changes_before_tab_switch", async () => {
+  it("keeps_current_file_tab_when_discard_is_cancelled", async () => {
     const { client, calls } = createMockClient();
     const agents = [createAgent("agent-1", "Alpha", "session-1")];
+    const confirmMock = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirmMock);
+
+    render(
+      createElement(AgentBrainPanel, {
+        client,
+        agents,
+        selectedAgentId: "agent-1",
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Identity" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Identity" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const textarea = await waitFor(() => {
+      const panel = screen.getByTestId("agent-personality-files");
+      const element = panel.querySelector("textarea");
+      if (!element) {
+        throw new Error("Personality editor textarea not found.");
+      }
+      return element;
+    });
+    fireEvent.change(textarea, {
+      target: {
+        value:
+          "# IDENTITY.md - Who Am I?\n\n- Name: Alpha Prime\n- Creature: droid\n- Vibe: calm\n- Emoji: 🤖\n",
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Directives" }));
+
+    expect(confirmMock).toHaveBeenCalledWith("Discard changes?");
+    expect(screen.queryByText("alpha agents")).not.toBeInTheDocument();
+    expect((textarea as HTMLTextAreaElement).value).toContain("Alpha Prime");
+    expect(calls.some((entry) => entry.method === "agents.files.set")).toBe(false);
+  });
+
+  it("discards_dirty_changes_before_tab_switch_when_confirmed", async () => {
+    const { client, calls } = createMockClient();
+    const agents = [createAgent("agent-1", "Alpha", "session-1")];
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirmMock);
 
     render(
       createElement(AgentBrainPanel, {
@@ -179,19 +222,10 @@ describe("AgentBrainPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Directives" }));
 
     await waitFor(() => {
-      expect(
-        calls.some(
-          (entry) =>
-            entry.method === "agents.files.set" &&
-            Boolean(
-              entry.params &&
-                typeof entry.params === "object" &&
-                (entry.params as Record<string, unknown>).name === "IDENTITY.md"
-            )
-        )
-      ).toBe(true);
+      expect(screen.getByText("alpha agents")).toBeInTheDocument();
     });
-    expect(screen.getByText("alpha agents")).toBeInTheDocument();
+    expect(confirmMock).toHaveBeenCalledWith("Discard changes?");
+    expect(calls.some((entry) => entry.method === "agents.files.set")).toBe(false);
   });
 
   it("does_not_render_name_editor_in_personality_panel", async () => {
