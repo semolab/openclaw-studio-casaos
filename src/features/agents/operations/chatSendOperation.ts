@@ -40,6 +40,22 @@ const resolveLatestTranscriptTimestampMs = (agent: AgentState): number | null =>
   return latest;
 };
 
+const resolveChatSendCompletionMode = (
+  payload: unknown,
+  optimisticRunId: string
+): "streaming-expected" | "terminal-immediate" => {
+  if (!payload || typeof payload !== "object") {
+    return "terminal-immediate";
+  }
+  const value = payload as { status?: unknown; runId?: unknown };
+  const status = typeof value.status === "string" ? value.status.trim().toLowerCase() : "";
+  const runId = typeof value.runId === "string" ? value.runId.trim() : "";
+  if ((status === "started" || status === "in_flight") && runId === optimisticRunId) {
+    return "streaming-expected";
+  }
+  return "terminal-immediate";
+};
+
 export async function sendChatMessageViaStudio(params: {
   client: GatewayClientLike;
   dispatch: SendDispatch;
@@ -152,7 +168,7 @@ export async function sendChatMessageViaStudio(params: {
       });
     }
 
-    await params.client.call("chat.send", {
+    const sendResult = await params.client.call("chat.send", {
       sessionKey: params.sessionKey,
       message: buildAgentInstruction({ message: trimmed }),
       deliver: false,
@@ -164,6 +180,20 @@ export async function sendChatMessageViaStudio(params: {
         type: "updateAgent",
         agentId,
         patch: { sessionCreated: true },
+      });
+    }
+
+    if (resolveChatSendCompletionMode(sendResult, runId) === "terminal-immediate") {
+      params.dispatch({
+        type: "updateAgent",
+        agentId,
+        patch: {
+          status: "idle",
+          runId: null,
+          runStartedAt: null,
+          streamText: null,
+          thinkingTrace: null,
+        },
       });
     }
   } catch (err) {

@@ -180,7 +180,7 @@ describe("sendChatMessageViaStudio", () => {
   it("does_not_sync_session_settings_when_already_synced", async () => {
     const agent = createAgent({ sessionSettingsSynced: true });
     const dispatch = vi.fn();
-    const call = vi.fn(async () => ({ ok: true }));
+    const call = vi.fn(async () => ({ runId: "run-1", status: "started" }));
 
     await sendChatMessageViaStudio({
       client: { call },
@@ -201,6 +201,124 @@ describe("sendChatMessageViaStudio", () => {
       "sessions.patch",
       expect.anything()
     );
+  });
+
+  it("clears_running_state_for_unknown_success_payload_shape", async () => {
+    const agent = createAgent({ sessionSettingsSynced: true, sessionCreated: true });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ ok: true }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey: agent.sessionKey,
+      message: "hello",
+      now: () => 1234,
+      generateRunId: () => "run-1",
+    });
+
+    const idlePatchAction = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .find(
+        (action) =>
+          action?.type === "updateAgent" &&
+          action?.agentId === agent.agentId &&
+          action?.patch?.status === "idle" &&
+          action?.patch?.runId === null
+      );
+    expect(idlePatchAction).toBeTruthy();
+  });
+
+  it("clears_running_state_for_stop_style_immediate_success_payload", async () => {
+    const agent = createAgent({ sessionSettingsSynced: true, sessionCreated: true });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ ok: true, aborted: false, runIds: [] }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey: agent.sessionKey,
+      message: "stop please",
+      now: () => 1234,
+      generateRunId: () => "run-1",
+    });
+
+    const idlePatchAction = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .find(
+        (action) =>
+          action?.type === "updateAgent" &&
+          action?.agentId === agent.agentId &&
+          action?.patch?.status === "idle" &&
+          action?.patch?.runId === null &&
+          action?.patch?.runStartedAt === null &&
+          action?.patch?.streamText === null &&
+          action?.patch?.thinkingTrace === null
+      );
+    expect(idlePatchAction).toBeTruthy();
+  });
+
+  it("keeps_running_state_for_matching_streaming_status_payloads", async () => {
+    const payloads = [{ runId: "run-1", status: "started" }, { runId: "run-1", status: "in_flight" }];
+
+    for (const payload of payloads) {
+      const agent = createAgent({ sessionSettingsSynced: true, sessionCreated: true });
+      const dispatch = vi.fn();
+      const call = vi.fn(async () => payload);
+
+      await sendChatMessageViaStudio({
+        client: { call },
+        dispatch,
+        getAgent: () => agent,
+        agentId: agent.agentId,
+        sessionKey: agent.sessionKey,
+        message: "hello",
+        now: () => 1234,
+        generateRunId: () => "run-1",
+      });
+
+      const idlePatchAction = dispatch.mock.calls
+        .map((entry) => entry[0])
+        .find(
+          (action) =>
+            action?.type === "updateAgent" &&
+            action?.agentId === agent.agentId &&
+            action?.patch?.status === "idle"
+        );
+      expect(idlePatchAction).toBeUndefined();
+    }
+  });
+
+  it("clears_running_state_for_streaming_shape_with_mismatched_run_id", async () => {
+    const agent = createAgent({ sessionSettingsSynced: true, sessionCreated: true });
+    const dispatch = vi.fn();
+    const call = vi.fn(async () => ({ runId: "different-run", status: "started" }));
+
+    await sendChatMessageViaStudio({
+      client: { call },
+      dispatch,
+      getAgent: () => agent,
+      agentId: agent.agentId,
+      sessionKey: agent.sessionKey,
+      message: "hello",
+      now: () => 1234,
+      generateRunId: () => "run-1",
+    });
+
+    const idlePatchAction = dispatch.mock.calls
+      .map((entry) => entry[0])
+      .find(
+        (action) =>
+          action?.type === "updateAgent" &&
+          action?.agentId === agent.agentId &&
+          action?.patch?.status === "idle" &&
+          action?.patch?.runId === null
+      );
+    expect(idlePatchAction).toBeTruthy();
   });
 
   it("supports_internal_send_without_local_user_echo", async () => {
