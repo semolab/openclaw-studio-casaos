@@ -460,6 +460,137 @@ describe("runtime routes", () => {
     await reader.cancel();
   });
 
+  it("stream route replays reconnect backlog across multiple pages when missed rows exceed replay limit", async () => {
+    const subscriberRef: {
+      current: ((entry: { id: number; event: unknown; createdAt: string }) => void) | null;
+    } = { current: null };
+    const eventsAfterCalls: number[] = [];
+    const makeDeltaEntry = (id: number) => ({
+      id,
+      event: {
+        type: "gateway.event" as const,
+        event: "runtime.delta",
+        seq: id,
+        payload: { sessionKey: "agent:alpha:main", index: id },
+        asOf: "2026-02-28T02:40:03.000Z",
+      },
+      createdAt: "2026-02-28T02:40:03.000Z",
+    });
+    const firstPage = Array.from({ length: 2_000 }, (_value, index) => makeDeltaEntry(index + 3));
+    const secondPage = [2_003, 2_004, 2_005].map(makeDeltaEntry);
+
+    const runtimeMock: RuntimeMock = {
+      ensureStarted: async () => {},
+      snapshot: () => ({
+        status: "connected",
+        reason: null,
+        asOf: "2026-02-28T02:40:00.000Z",
+        outboxHead: 2_005,
+      }),
+      eventsAfter: (lastSeenId: number, limit?: number) => {
+        eventsAfterCalls.push(lastSeenId);
+        expect(limit).toBe(2_000);
+        if (lastSeenId === 2) {
+          return firstPage;
+        }
+        if (lastSeenId === 2_002) {
+          return secondPage;
+        }
+        return [];
+      },
+      eventsBefore: () => [],
+      eventsBeforeForAgent: () => [],
+      backfillAgentHistoryIndex: () => ({ scannedRows: 0, updatedRows: 0, exhausted: true }),
+      subscribe: (handler) => {
+        subscriberRef.current = handler;
+        return () => {
+          subscriberRef.current = null;
+        };
+      },
+    };
+
+    const mod = await loadRouteModule<{ GET: (request: Request) => Promise<Response> }>(
+      "@/app/api/runtime/stream/route",
+      runtimeMock
+    );
+    const response = await mod.GET(
+      new Request("http://localhost/api/runtime/stream", {
+        headers: { "Last-Event-ID": "2" },
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toBeTruthy();
+
+    const reader = response.body!.getReader();
+    const output = await readStreamUntil(reader, (text) => text.includes("id: 2005"), 2_500);
+    expect(eventsAfterCalls).toEqual([2, 2_002]);
+    expect(output).toContain("id: 2005");
+    await reader.cancel();
+  });
+
+  it("stream route clamps reconnect cursor when Last-Event-ID is ahead of current outbox head", async () => {
+    const subscriberRef: {
+      current: ((entry: { id: number; event: unknown; createdAt: string }) => void) | null;
+    } = { current: null };
+    const eventsAfterCalls: number[] = [];
+    const runtimeMock: RuntimeMock = {
+      ensureStarted: async () => {},
+      snapshot: () => ({
+        status: "connected",
+        reason: null,
+        asOf: "2026-02-28T02:40:00.000Z",
+        outboxHead: 5,
+      }),
+      eventsAfter: (lastSeenId: number, limit?: number) => {
+        eventsAfterCalls.push(lastSeenId);
+        expect(limit).toBe(2_000);
+        return [];
+      },
+      eventsBefore: () => [],
+      eventsBeforeForAgent: () => [],
+      backfillAgentHistoryIndex: () => ({ scannedRows: 0, updatedRows: 0, exhausted: true }),
+      subscribe: (handler) => {
+        subscriberRef.current = handler;
+        return () => {
+          subscriberRef.current = null;
+        };
+      },
+    };
+
+    const mod = await loadRouteModule<{ GET: (request: Request) => Promise<Response> }>(
+      "@/app/api/runtime/stream/route",
+      runtimeMock
+    );
+    const response = await mod.GET(
+      new Request("http://localhost/api/runtime/stream", {
+        headers: { "Last-Event-ID": "999" },
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(eventsAfterCalls).toEqual([5]);
+    expect(response.body).toBeTruthy();
+
+    const emit = subscriberRef.current;
+    if (!emit) {
+      throw new Error("expected runtime stream subscriber to be attached");
+    }
+    emit({
+      id: 6,
+      event: {
+        type: "runtime.status",
+        status: "connected",
+        reason: null,
+        asOf: "2026-02-28T02:40:06.000Z",
+      },
+      createdAt: "2026-02-28T02:40:06.000Z",
+    });
+
+    const reader = response.body!.getReader();
+    const output = await readStreamUntil(reader, (text) => text.includes("id: 6"));
+    expect(output).toContain("id: 6");
+    await reader.cancel();
+  });
+
   it("stream route does not drop rows committed between reconnect replay and live subscribe", async () => {
     const subscriberRef: {
       current: ((entry: { id: number; event: unknown; createdAt: string }) => void) | null;

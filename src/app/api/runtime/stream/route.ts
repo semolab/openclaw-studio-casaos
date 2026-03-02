@@ -111,15 +111,41 @@ export async function GET(request: Request) {
         emitEntry(entry);
       });
 
-      if (lastSeenId <= 0) {
-        const snapshot = controlPlane.snapshot();
-        lastDeliveredId = Math.max(0, snapshot.outboxHead - REPLAY_LIMIT);
+      const startupSnapshot = controlPlane.snapshot();
+      const replayUpperBound =
+        lastSeenId > 0 ? startupSnapshot.outboxHead : Number.POSITIVE_INFINITY;
+      if (lastSeenId > 0) {
+        lastDeliveredId = Math.min(lastSeenId, replayUpperBound);
+      } else {
+        lastDeliveredId = Math.max(0, startupSnapshot.outboxHead - REPLAY_LIMIT);
       }
 
-      const replayEntries = controlPlane.eventsAfter(lastDeliveredId, REPLAY_LIMIT);
-      for (const entry of replayEntries) {
-        if (!emitEntry(entry)) {
-          return;
+      let replayCursor = lastDeliveredId;
+      while (true) {
+        const replayEntries = controlPlane.eventsAfter(replayCursor, REPLAY_LIMIT);
+        if (replayEntries.length === 0) {
+          break;
+        }
+
+        let reachedReplayUpperBound = false;
+        for (const entry of replayEntries) {
+          if (entry.id > replayUpperBound) {
+            reachedReplayUpperBound = true;
+            break;
+          }
+          if (!emitEntry(entry)) {
+            return;
+          }
+        }
+
+        replayCursor = lastDeliveredId;
+        if (
+          lastSeenId <= 0 ||
+          reachedReplayUpperBound ||
+          replayEntries.length < REPLAY_LIMIT ||
+          replayCursor >= replayUpperBound
+        ) {
+          break;
         }
       }
 
