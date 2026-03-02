@@ -7,6 +7,7 @@ import {
 } from "@/lib/cron/types";
 import { deleteGatewayAgent } from "@/lib/gateway/agentConfig";
 import { deleteAgentViaStudio } from "@/features/agents/operations/deleteAgentOperation";
+import { createRuntimeWriteTransport } from "@/features/agents/operations/runtimeWriteTransport";
 
 vi.mock("@/lib/cron/types", async () => {
   const actual = await vi.importActual<typeof import("@/lib/cron/types")>("@/lib/cron/types");
@@ -273,5 +274,132 @@ describe("delete agent via studio operation", () => {
     expect(mockedRemoveCronJobsForAgentWithBackup).not.toHaveBeenCalled();
     expect(mockedRestoreCronJobs).not.toHaveBeenCalled();
     expect(mockedDeleteGatewayAgent).not.toHaveBeenCalled();
+  });
+
+  it("uses domain cron intents instead of browser cron rpc when domain intents are enabled", async () => {
+    const fetchJson: FetchJson = vi.fn(async (input, init) => {
+      if (input === "/api/gateway/agent-state" && init?.method === "POST") {
+        return { result: createTrashResult() } as never;
+      }
+      if (input === "/api/intents/cron-remove-agent" && init?.method === "POST") {
+        return { ok: true, payload: { removedJobs: [createCronRestoreInput("Job A", "agent-1")] } } as never;
+      }
+      throw new Error(`Unexpected fetchJson call: ${String(input)} ${init?.method ?? "GET"}`);
+    });
+    const postIntent = vi.fn(async (path: string) => {
+      if (path === "/api/intents/agent-delete") {
+        return { ok: true };
+      }
+      throw new Error(`Unexpected intent path: ${path}`);
+    });
+    const call = vi.fn(async () => {
+      throw new Error("browser client unavailable");
+    });
+
+    mockedRemoveCronJobsForAgentWithBackup.mockImplementation(async () => {
+      throw new Error("browser cron helper should not be used in domain mode");
+    });
+    mockedRestoreCronJobs.mockImplementation(async () => {
+      throw new Error("browser cron restore helper should not be used in domain mode");
+    });
+    mockedDeleteGatewayAgent.mockImplementation(async () => {
+      throw new Error("legacy delete should not be used in domain mode");
+    });
+
+    const runtimeWriteTransport = createRuntimeWriteTransport({
+      client: { call } as never,
+      useDomainIntents: true,
+      postIntent,
+    });
+
+    await expect(
+      deleteAgentViaStudio({
+        client: { call } as never,
+        runtimeWriteTransport,
+        agentId: "agent-1",
+        fetchJson,
+      })
+    ).resolves.toEqual({
+      trashed: createTrashResult(),
+      restored: null,
+    });
+
+    expect(fetchJson).toHaveBeenCalledWith(
+      "/api/intents/cron-remove-agent",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(postIntent).toHaveBeenCalledWith("/api/intents/agent-delete", { agentId: "agent-1" });
+    expect(mockedRemoveCronJobsForAgentWithBackup).not.toHaveBeenCalled();
+    expect(mockedRestoreCronJobs).not.toHaveBeenCalled();
+    expect(mockedDeleteGatewayAgent).not.toHaveBeenCalled();
+  });
+
+  it("restores cron jobs via domain intent when delete fails after domain cron removals", async () => {
+    const backups = [createCronRestoreInput("Job R", "agent-1")];
+    const callOrder: string[] = [];
+    const fetchJson: FetchJson = vi.fn(async (input, init) => {
+      if (input === "/api/gateway/agent-state" && init?.method === "POST") {
+        callOrder.push("trash");
+        return {
+          result: createTrashResult({
+            trashDir: "/tmp/trash-domain",
+            moved: [{ from: "/from", to: "/to" }],
+          }),
+        } as never;
+      }
+      if (input === "/api/intents/cron-remove-agent" && init?.method === "POST") {
+        callOrder.push("cron-remove");
+        return { ok: true, payload: { removedJobs: backups } } as never;
+      }
+      if (input === "/api/intents/cron-restore" && init?.method === "POST") {
+        callOrder.push("cron-restore");
+        return { ok: true, payload: { restored: backups.length } } as never;
+      }
+      if (input === "/api/gateway/agent-state" && init?.method === "PUT") {
+        callOrder.push("state-restore");
+        return { result: { restored: [] } } as never;
+      }
+      throw new Error(`Unexpected fetchJson call: ${String(input)} ${init?.method ?? "GET"}`);
+    });
+    const deleteErr = new Error("delete failed");
+    const postIntent = vi.fn(async (path: string) => {
+      if (path === "/api/intents/agent-delete") {
+        throw deleteErr;
+      }
+      throw new Error(`Unexpected intent path: ${path}`);
+    });
+    const call = vi.fn(async () => {
+      throw new Error("browser client unavailable");
+    });
+
+    mockedRemoveCronJobsForAgentWithBackup.mockImplementation(async () => {
+      throw new Error("browser cron helper should not be used in domain mode");
+    });
+    mockedRestoreCronJobs.mockImplementation(async () => {
+      throw new Error("browser cron restore helper should not be used in domain mode");
+    });
+
+    const runtimeWriteTransport = createRuntimeWriteTransport({
+      client: { call } as never,
+      useDomainIntents: true,
+      postIntent,
+    });
+
+    await expect(
+      deleteAgentViaStudio({
+        client: { call } as never,
+        runtimeWriteTransport,
+        agentId: "agent-1",
+        fetchJson,
+      })
+    ).rejects.toBe(deleteErr);
+
+    expect(callOrder).toEqual(["trash", "cron-remove", "cron-restore", "state-restore"]);
+    expect(fetchJson).toHaveBeenCalledWith(
+      "/api/intents/cron-restore",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(mockedRemoveCronJobsForAgentWithBackup).not.toHaveBeenCalled();
+    expect(mockedRestoreCronJobs).not.toHaveBeenCalled();
   });
 });
