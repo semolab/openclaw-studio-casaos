@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  openclaw-studio:
+    image: ${OPENCLAW_STUDIO_IMAGE:-ghcr.io/wekeepgrowing/openclaw-studio-casaos:studio-2026.3.9-amd64}
+    container_name: openclaw-studio
+    platform: linux/amd64
+    init: true
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      HOST: ${HOST:-0.0.0.0}
+      PORT: ${PORT:-3000}
+      # Required when HOST is public (e.g., 0.0.0.0)
+      STUDIO_ACCESS_TOKEN: ${STUDIO_ACCESS_TOKEN}
+      OPENCLAW_STATE_DIR: ${OPENCLAW_STATE_DIR:-/data}
+      NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-ws://localhost:18789}
+    volumes:
+      - /DATA/AppData/openclaw-studio/data:/data
