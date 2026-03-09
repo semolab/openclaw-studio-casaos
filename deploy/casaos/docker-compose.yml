@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   openclaw-studio:
-    image: ${OPENCLAW_STUDIO_IMAGE:-ghcr.io/wekeepgrowing/openclaw-studio-casaos:studio-2026.3.9-amd64}
+    image: ${OPENCLAW_STUDIO_IMAGE:-ghcr.io/semolab/openclaw-studio-casaos:studio-2026.3.9-amd64}
     container_name: openclaw-studio
     platform: linux/amd64
     init: true

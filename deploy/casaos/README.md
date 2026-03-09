@@ -14,7 +14,7 @@ Set at least:
 Recommended image tag format:
 
 ```text
-ghcr.io/wekeepgrowing/openclaw-studio-casaos:studio-YYYY.M.D-amd64
+ghcr.io/semolab/openclaw-studio-casaos:studio-YYYY.M.D-amd64
 ```
 
 ## 2) First access
@@ -45,6 +45,6 @@ Current upstream snapshot may fail on `next build` in CI due a root page prerend
 This Docker setup runs Studio in server dev mode (`server/index.js --dev`) for reliability on CasaOS.
 
 ```bash
-docker build -t ghcr.io/wekeepgrowing/openclaw-studio-casaos:studio-2026.3.9-amd64 .
-docker push ghcr.io/wekeepgrowing/openclaw-studio-casaos:studio-2026.3.9-amd64
+docker build -t ghcr.io/semolab/openclaw-studio-casaos:studio-2026.3.9-amd64 .
+docker push ghcr.io/semolab/openclaw-studio-casaos:studio-2026.3.9-amd64
 ```
